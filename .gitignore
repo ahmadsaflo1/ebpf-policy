@@ -1,0 +1,16 @@
+# Compiled binaries
+/server
+/agent
+
+# Go build-cache
+*.o
+*.a
+
+# eBPF objekt
+ebpf/*.o
+
+# Miljövariabler
+.env
+
+# VS Code
+.vscode/
