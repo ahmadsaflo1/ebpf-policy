@@ -6,6 +6,9 @@
 *.o
 *.a
 
+# SQLite database
+*.db
+
 # eBPF objekt
 ebpf/*.o
 
