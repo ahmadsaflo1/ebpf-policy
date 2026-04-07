@@ -1,11 +1,14 @@
 package api
 
 import (
-    "database/sql"
-    "net/http"
-    "github.com/gin-gonic/gin"
-    "github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
-    "github.com/ahmadsaflo1/ebpf-policy/internal/models"
+	"database/sql"
+	"net/http"
+	"strconv"
+
+	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/server/policy"
+	"github.com/gin-gonic/gin"
 )
 
 // GET /api/rules — get all rules
@@ -55,6 +58,10 @@ func CreateRule(c *gin.Context) {
 
     id, _ := result.LastInsertId()
     rule.ID = int(id)
+
+	// Publish to NATS so the agent knows about the new rule
+	policy.PublishUpdate(rule)
+
     c.JSON(http.StatusCreated, rule)
 }
 
@@ -108,12 +115,18 @@ func UpdateRule(c *gin.Context) {
 		return
 	}
 
+	// Publish to NATS so the agent knows about the updated rule
+	ruleID, _ := strconv.Atoi(id)
+	rule.ID = ruleID
+	policy.PublishUpdate(rule)
+
     c.JSON(http.StatusOK, gin.H{"message": "rule updated"})
 }
 
 // DELETE /api/rules/:id — delete a specific rule
 func DeleteRule(c *gin.Context) {
     id := c.Param("id")
+
     result, err := db.DB.Exec("DELETE FROM policy_rules WHERE id = ?", id)
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -126,6 +139,10 @@ func DeleteRule(c *gin.Context) {
         c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
         return
     }
+
+	// Publish to NATS so the agent knows about the deleted rule
+	ruleID, _ := strconv.Atoi(id)
+	policy.PublishDelete(ruleID)
 
     c.JSON(http.StatusOK, gin.H{"message": "rule deleted"})
 }

@@ -2,14 +2,19 @@ package main
 
 import (
 	"log"
-	"github.com/gin-gonic/gin"
+
+	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/api"
-    "github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	// Initialize database and NATS
 	db.Init()
-
+	messaging.Init()
+	defer messaging.Close()
+	
 	r := gin.Default()
 
 	r.GET("/health", func(c *gin.Context) {
