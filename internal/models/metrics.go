@@ -6,7 +6,7 @@ import "time"
 type MetricsReport struct {
 	AgentID   string         `json:"agent_id"`
 	Timestamp time.Time      `json:"timestamp"`
-	Clients	  []ClientStatus `json:"clients"`
+	Clients	  []ClientStats `json:"clients"`
 }
 
 type ClientStats struct {
