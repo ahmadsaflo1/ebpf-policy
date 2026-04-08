@@ -11,9 +11,9 @@ import (
 
 // FetchRules fetches all rules from the policy server when the agent starts up.
 func FetchRules(serverURL string) ([]models.PolicyRule, error) {
-	resp, err := http.Get(fmt.Sprintf("%s/api/policies", serverURL))
+	resp, err := http.Get(fmt.Sprintf("%s/api/rules", serverURL))
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch policies: %w", err)
+		return nil, fmt.Errorf("failed to fetch rules: %w", err)
 	}
 	defer resp.Body.Close()
 
