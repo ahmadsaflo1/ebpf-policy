@@ -57,7 +57,7 @@ func (r *Reporter) send() {
 		return
 	}
 
-	err = messaging.Publish("report.matrix", data)
+	err = messaging.Publish("metrics.report", data)
 	if err != nil {
 		log.Println("Failed to publish report:", err)
 		return
