@@ -2,6 +2,8 @@ package messaging
 
 import (
 	"log"
+	"os"
+
 	"github.com/nats-io/nats.go"
 )
 
@@ -9,7 +11,13 @@ var NC *nats.Conn
 
 func Init() {
 	var err error
-	NC, err = nats.Connect(nats.DefaultURL)
+	natsURL := os.Getenv("NATS_URL")
+	if natsURL == "" {
+		natsURL = nats.DefaultURL
+	}
+	log.Printf("Connecting to NATS at %s ...\n", natsURL)
+
+	NC, err = nats.Connect(natsURL)
 	if err != nil {
 		log.Fatal("could not connect to NATS:", err)
 	}
