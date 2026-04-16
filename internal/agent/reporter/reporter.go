@@ -24,7 +24,7 @@ func New(agentID string) *Reporter {
 }
 
 // AddStats adds client stats to the report.
-func (r *Reporter) AddStats(stats models.ClientStats) {
+func (r *Reporter) AddStat(stats models.ClientStats) {
 	r.stats = append(r.stats, stats)
 }
 
