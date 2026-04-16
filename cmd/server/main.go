@@ -1,11 +1,18 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/api"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/server/metrics"
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,7 +21,9 @@ func main() {
 	db.Init()
 	messaging.Init()
 	defer messaging.Close()
-	
+
+	metrics.StartCollector()
+
 	r := gin.Default()
 
 	r.GET("/health", func(c *gin.Context) {
@@ -22,14 +31,38 @@ func main() {
 	})
 
 	rules := r.Group("/api/rules")
-    {
-        rules.GET("",      api.GetRules)
-        rules.POST("",     api.CreateRule)
-        rules.GET("/:id",  api.GetRule)
-        rules.PUT("/:id",  api.UpdateRule)
-        rules.DELETE("/:id", api.DeleteRule)
-    }
+	{
+		rules.GET("", api.GetRules)
+		rules.POST("", api.CreateRule)
+		rules.GET("/:id", api.GetRule)
+		rules.PUT("/:id", api.UpdateRule)
+		rules.DELETE("/:id", api.DeleteRule)
+	}
 
-	log.Println("Server run on :8080")
-	log.Fatal(r.Run(":8080"))
+	// Start server in a goroutine so that it doesn't block the main thread
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: r,
+	}
+
+	go func() {
+		log.Println("Starting server on :8080 ...")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server crashed: %s\n", err)
+		}
+	}()
+
+	// Wait for termination signal to gracefully shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// The context is used to inform the server it has 5 seconds to finish the request it is currently handling
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	srv.Shutdown(ctx)
+	log.Println("Server gracefully stopped")
+
 }
