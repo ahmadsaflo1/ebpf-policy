@@ -3,7 +3,6 @@ package config
 import (
 	"log"
 	"sync"
-
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
 )
 
@@ -11,13 +10,11 @@ import (
 type RuleStore struct {
 	mu sync.RWMutex
 	rules map[int]models.PolicyRule  // key: rule ID
-	agentID string
 }
 
-func NewRuleStore(agentID string) *RuleStore {
+func NewRuleStore() *RuleStore {
 	return &RuleStore{
 		rules: make(map[int]models.PolicyRule),
-		agentID: agentID,
 	}
 }
 
@@ -25,15 +22,15 @@ func (s *RuleStore) Upsert(rule models.PolicyRule) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rules[rule.ID] = rule
-	log.Printf("[%s] Rule upserted: Name=%s (threshold: %d req/s)\n",
-		s.agentID, rule.Name, rule.Threshold)
+	log.Printf("Rule upserted: Name=%s (threshold: %d req/s)\n",
+		rule.Name, rule.Threshold)
 }
 
 func (s *RuleStore) Delete(id int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.rules, id)
-	log.Printf("[%s] Rule deleted: ID=%d\n", s.agentID, id)
+	log.Printf("Rule deleted: ID=%d\n", id)
 }
 
 func (s *RuleStore) GetAll() []models.PolicyRule {

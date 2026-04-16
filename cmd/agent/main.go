@@ -32,7 +32,7 @@ func main() {
     defer program.Close()
 
     // initialize rule store and fetch initial rules from server
-    store := config.NewRuleStore(cfg.AgentID)
+    store := config.NewRuleStore()
 
     rules, err := config.FetchRules(cfg.ServerURL)
     if err != nil {
