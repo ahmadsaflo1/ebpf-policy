@@ -6,6 +6,7 @@ import (
     "log"
     "net"
     "time"
+    "os"
 
     "github.com/cilium/ebpf/link"
 )
@@ -51,11 +52,29 @@ func (p *PolicyProgram) Close() {
     log.Println("Successfully unloaded eBPF program and closed resources")
 }
 
-// BlockIP adds the specified IP address to the block list for a given duration.
+// BlockIP adds the specified IP address to the block list with a duration for how long it should be blocked.
 func (p *PolicyProgram) BlockIP(ip net.IP, duration time.Duration) error {
     key := ipToUint32(ip)
-    blockedUntil := uint64(time.Now().Add(duration).UnixNano())
+    
+    ktimeNs, err := getKtimeNs()
+    if err != nil {
+        return fmt.Errorf("Failed to get ktime in nanoseconds: %w", err)
+    }
+    
+    blockedUntil := ktimeNs + uint64(duration.Nanoseconds())
     return p.objs.BlockList.Put(key, blockedUntil)
+}
+
+// getKtimeNs retrieves the current kernel time in nanoseconds, which is used for timing the block duration in the eBPF program.
+func getKtimeNs() (uint64, error) {
+    data, err := os.ReadFile("/proc/uptime")
+    if err != nil {
+        return 0, err
+    }
+
+    var uptime float64
+    fmt.Sscanf(string(data), "%f", &uptime)
+    return uint64(uptime * 1e9), nil
 }
 
 // UnblockIP removes the specified IP address from the block list.
