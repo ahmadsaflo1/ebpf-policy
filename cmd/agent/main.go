@@ -60,6 +60,9 @@ func main() {
     rep := reporter.New(cfg.AgentID)
     rep.Start()
 
+
+    prevCounts := make(map[string]uint64)
+
     // Periodically read stats from eBPF and apply policies
     go func() {
         ticker := time.NewTicker(10 * time.Second)
@@ -73,24 +76,44 @@ func main() {
 
             // Check each IP against the policy rules and block if necessary
             for ipStr, count := range stats {
-                reqPerSec := int(count) / 10
+                prev := prevCounts[ipStr]
+                diff := count - prev
+                prevCounts[ipStr] = count
+
+                reqPerSec := int(diff) / 10
+
+                ip := net.ParseIP(ipStr)
                 rule := store.Match(reqPerSec)
+                isBlocked := program.IsBlocked(ip)
 
-                if rule != nil {
-                    log.Printf("IP %s exceeds limit (%d req/s) — blocking!\n",
-                        ipStr, reqPerSec)
-
-                    ip := net.ParseIP(ipStr)
+                if isBlocked {
+                    if rule != nil{
+                        // Still high traffic — extend the bloc
+                        duration:= time.Duration(rule.Duration) * time.Second
+                        program.BlockIP(ip, duration)
+                        log.Printf("[%s] IP %s still active (%d req/s) — extending block\n",
+                            cfg.AgentID, ipStr, reqPerSec)
+                    } else {
+                        // Traffic has calmed down — unblock
+                        program.UnblockIP(ip)
+                        log.Printf("[%s] IP %s calmed down (%d req/s) — unblocking\n",
+                            cfg.AgentID, ipStr, reqPerSec)      
+                    }
+                } else if rule != nil {
+                    // Not blocked but exceeds threshold — block
                     duration := time.Duration(rule.Duration) * time.Second
                     program.BlockIP(ip, duration)
+
+                    log.Printf("[%s] IP %s exceeds limit (%d req/s) — blocking!\n",
+                        cfg.AgentID, ipStr, reqPerSec)
                 }
 
                 // Send stats to the server for monitoring
                 rep.AddStat(models.ClientStats{
                     IP:        ipStr,
                     ReqPerSec: reqPerSec,
-                    Blocked:   0,
-                    Passed:    int(count),
+                    Blocked:   boolToInt(isBlocked),
+                    Passed:    int(diff),
                 })
             }
         }
@@ -104,4 +127,11 @@ func main() {
     <-quit
 
     log.Println("Shutting down agent...")
+}
+
+func boolToInt(b bool) int {
+    if b {
+        return 1
+    }
+    return 0
 }

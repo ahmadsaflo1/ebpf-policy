@@ -77,6 +77,27 @@ func getKtimeNs() (uint64, error) {
     return uint64(uptime * 1e9), nil
 }
 
+// IsBlocked checks if an IP address is currently blocked
+func(p *PolicyProgram) IsBlocked(ip net.IP) bool {
+    key := ipToUint32(ip)
+
+    var blockedUntil uint64
+    err := p.objs.BlockList.Lookup(key, &blockedUntil)
+    if err != nil {
+        // IP not found in block list
+        return false
+    }
+
+    // Get current kernel time
+    ktimeNs, err := getKtimeNs()
+    if err != nil {
+        return false
+    }
+
+    // IP is blocked if current time is before blockedUntil
+    return ktimeNs < blockedUntil
+}
+
 // UnblockIP removes the specified IP address from the block list.
 func (p *PolicyProgram) UnblockIP(ip net.IP) error {
     key := ipToUint32(ip)
