@@ -47,10 +47,32 @@ func (s *RuleStore) GetAll() []models.PolicyRule {
 func (s *RuleStore) Match(reqPerSec int) *models.PolicyRule {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	var bestRule *models.PolicyRule
+
+
 	for _, rule := range s.rules {
-		if reqPerSec > rule.Threshold {
-			return &rule
+		rule := rule // avoid closure capture
+
+		if reqPerSec <= rule.Threshold {
+			continue // does not match
 		}
+		if bestRule == nil {
+			bestRule = &rule
+			continue
+		}
+
+		// Block always beats ratelimit
+		if  rule.Action == "block" && bestRule.Action != "ratelimit" {
+			bestRule = &rule
+			continue
+		}
+		 
+		// Among same action type — pick highest threshold (most specific)
+		if rule.Action == bestRule.Action && rule.Threshold > bestRule.Threshold {
+            bestRule = &rule
+        }
 	}
-	return nil
+
+	return bestRule
 }

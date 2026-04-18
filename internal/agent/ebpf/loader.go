@@ -16,6 +16,12 @@ type PolicyProgram struct {
     xdp  link.Link
 }
 
+// RateLimitState holds the token bucket state for an IP
+type RateLimitState struct {
+    Tokens     uint64
+    LastRefill uint64
+}
+
 // Load loads the eBPF program and attaches it to the specified network interface.
 func Load(iface string) (*PolicyProgram, error) {
     p := &PolicyProgram{}
@@ -65,17 +71,6 @@ func (p *PolicyProgram) BlockIP(ip net.IP, duration time.Duration) error {
     return p.objs.BlockList.Put(key, blockedUntil)
 }
 
-// getKtimeNs retrieves the current kernel time in nanoseconds, which is used for timing the block duration in the eBPF program.
-func getKtimeNs() (uint64, error) {
-    data, err := os.ReadFile("/proc/uptime")
-    if err != nil {
-        return 0, err
-    }
-
-    var uptime float64
-    fmt.Sscanf(string(data), "%f", &uptime)
-    return uint64(uptime * 1e9), nil
-}
 
 // IsBlocked checks if an IP address is currently blocked
 func(p *PolicyProgram) IsBlocked(ip net.IP) bool {
@@ -118,6 +113,41 @@ func (p *PolicyProgram) GetAllStats() (map[string]uint64, error) {
     }
 
     return stats, iter.Err()
+}
+
+// GetRateLimitStats returns the current token bucket state for an IP.
+func (p *PolicyProgram) GetRateLimitStats(ip net.IP) (*RateLimitState, error) {
+    key := ipToUint32(ip)
+
+    var state RateLimitState
+    err := p.objs.RateLimitMap.Lookup(key, &state)
+    if err != nil {
+        // IP not found — not rate limited yet
+        return nil, nil
+    }
+
+    return &state, nil
+}
+
+// IsRateLimited checks if an IP is currently rate limited (no tokens left).
+func (p *PolicyProgram) IsRateLimited(ip net.IP) bool {
+    state, err := p.GetRateLimitStats(ip)
+    if err != nil || state == nil {
+        return false
+    }
+    return state.Tokens == 0
+}
+
+// getKtimeNs retrieves the current kernel time in nanoseconds, which is used for timing the block duration in the eBPF program.
+func getKtimeNs() (uint64, error) {
+    data, err := os.ReadFile("/proc/uptime")
+    if err != nil {
+        return 0, err
+    }
+
+    var uptime float64
+    fmt.Sscanf(string(data), "%f", &uptime)
+    return uint64(uptime * 1e9), nil
 }
 
 // Helper functions to convert between net.IP and uint32 for map keys

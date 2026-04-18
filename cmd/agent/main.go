@@ -76,6 +76,7 @@ func main() {
 
             // Check each IP against the policy rules and block if necessary
             for ipStr, count := range stats {
+                // Calculate req/s from difference since last check
                 prev := prevCounts[ipStr]
                 diff := count - prev
                 prevCounts[ipStr] = count
@@ -87,7 +88,7 @@ func main() {
                 isBlocked := program.IsBlocked(ip)
 
                 if isBlocked {
-                    if rule != nil{
+                    if rule != nil && rule.Action == "block" {
                         // Still high traffic — extend the bloc
                         duration:= time.Duration(rule.Duration) * time.Second
                         program.BlockIP(ip, duration)
@@ -100,12 +101,18 @@ func main() {
                             cfg.AgentID, ipStr, reqPerSec)      
                     }
                 } else if rule != nil {
-                    // Not blocked but exceeds threshold — block
-                    duration := time.Duration(rule.Duration) * time.Second
-                    program.BlockIP(ip, duration)
-
-                    log.Printf("[%s] IP %s exceeds limit (%d req/s) — blocking!\n",
-                        cfg.AgentID, ipStr, reqPerSec)
+                    if rule.Action == "block" {
+                        // Exceeds DDoS threshold — block for X seconds
+                        duration := time.Duration(rule.Duration) * time.Second
+                        program.BlockIP(ip, duration)
+                        log.Printf("[%s] IP %s exceeds limit (%d req/s) — blocking!\n",
+                            cfg.AgentID, ipStr, reqPerSec)
+                    } else if rule.Action == "ratelimit" {
+                        // For rate-limiting, we could implement a token bucket in the eBPF program.
+                        // For simplicity, we'll just log it here.
+                        log.Printf("[%s] IP %s exceeds rate limit (%d req/s) — would rate limit\n",
+                            cfg.AgentID, ipStr, reqPerSec)
+                    }
                 }
 
                 // Send stats to the server for monitoring
