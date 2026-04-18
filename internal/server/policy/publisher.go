@@ -20,12 +20,19 @@ func PublishUpdate(rule models.PolicyRule) {
 		return
 	}
 
-	err = messaging.Publish(TopicPolicyUpdates, data)
-	if err != nil {
-		log.Println("Could not publish policy update:", err)
-	}
+	// If the rule has a tag, publish to a specific topic for that tag
+	topic := TopicPolicyUpdates
+    if rule.Tag != "" {
+        topic = TopicPolicyUpdates + "." + rule.Tag
+    }
 
-	log.Printf("Published policy update: %s\n", rule.Name)
+    err = messaging.Publish(topic, data)
+    if err != nil {
+        log.Println("Could not publish policy update:", err)
+        return
+    }
+
+    log.Printf("Published policy update: %s (topic: %s)\n", rule.Name, topic)
 }
 
 // Publish that a rule has been removed

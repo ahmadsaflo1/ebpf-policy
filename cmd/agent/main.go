@@ -52,7 +52,7 @@ func main() {
             store.Delete(ruleID)
         },
     )
-    if err := listener.Start(); err != nil {
+    if err := listener.Start(cfg.Env); err != nil {
         log.Fatal("Failed to start policy listener:", err)
     }
 

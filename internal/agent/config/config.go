@@ -10,6 +10,7 @@ type Config struct {
 	ServerURL string
 	AgentID string
 	Interface string  // network interface, e.g. "eth0"
+	Env string        // environment tag, e.g. "production"
 }
 
 func Load() *Config {
@@ -18,10 +19,11 @@ func Load() *Config {
 		ServerURL: getEnv("SERVER_URL", "http://localhost:8080"),
 		AgentID:   getEnv("AGENT_ID",   "agent-001"),
 		Interface: getEnv("INTERFACE",  "eth0"),
+		Env:       getEnv("ENV",       ""),
 	}
 
-	log.Printf("Agent configured: ID=%s Interface=%s\n",
-		cfg.AgentID, cfg.Interface)
+	log.Printf("Agent configured: ID=%s Interface=%s Env=%s\n",
+		cfg.AgentID, cfg.Interface, cfg.Env)
 
 	return cfg
 }

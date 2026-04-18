@@ -9,6 +9,7 @@ type PolicyRule struct {
 	Threshold int       `json:"threshold"`// req/s
 	Action    string    `json:"action"`   // e.g. "block" or "rate_limit"
 	Duration  int       `json:"duration"` // seconds
+	Tag       string    `json:"tag"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

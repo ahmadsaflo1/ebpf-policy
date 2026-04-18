@@ -22,33 +22,41 @@ func NewListener(onUpdate RuleHandler, onDelete DeleteHandler) *Listener {
 	}
 }
 
-// Start begins listening for policy updates from server via NATS.
-func (l *Listener) Start() error {
-	// listen for new/updates policy
-	err := messaging.Subscribe("policy.update", func(data []byte) {
-		var rule models.PolicyRule
-		if err := json.Unmarshal(data, &rule); err != nil {
-			log.Println("Failed to unmarshal policy update:", err)
-			return
-		}
-		log.Printf("Received policy update: %s\n", rule.Name)
-		l.onUpdate(rule)
-	})
-	if err != nil {
-		return err
-	}
-	
-	// listen for policy deletions
-	err = messaging.Subscribe("policy.delete", func(data []byte) {
-		var payload map[string]int
-		if err := json.Unmarshal(data, &payload); err != nil {
-			log.Println("Failed to unmarshal policy delete:", err)
-			return
-		}
-		ruleID := payload["id"]
-		log.Printf("Received policy delete for ID: %d\n", ruleID)
-		l.onDelete(ruleID)
-	})
+// Start listening for policy updates and deletions. If env is specified, also listen for updates specific to that env (e.g. "production").
+func (l *Listener) Start(env string) error {
+	// Build list of topics to subscribe to
+    topics := []string{"policy.update"}
+    if env != "" {
+        topics = append(topics, "policy.update."+env)
+    }
 
-	return err
+    // Subscribe to all topics using the same handler
+    for _, topic := range topics {
+        t := topic // avoid closure capture issue
+        err := messaging.Subscribe(t, func(data []byte) {
+            var rule models.PolicyRule
+            if err := json.Unmarshal(data, &rule); err != nil {
+                log.Printf("Failed to unmarshal policy update on topic %s: %v\n", t, err)
+                return
+            }
+            log.Printf("Received policy update on topic '%s': %s\n", t, rule.Name)
+            l.onUpdate(rule)
+        })
+        if err != nil {
+            return err
+        }
+    }
+
+    // Listen for policy deletions
+    err := messaging.Subscribe("policy.delete", func(data []byte) {
+        var payload map[string]int
+        if err := json.Unmarshal(data, &payload); err != nil {
+            log.Println("Failed to unmarshal policy delete:", err)
+            return
+        }
+        ruleID := payload["id"]
+        log.Printf("Received policy delete for ID: %d\n", ruleID)
+        l.onDelete(ruleID)
+    })
+    return err
 }
