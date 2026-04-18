@@ -3,11 +3,13 @@ package messaging
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
 
 var NC *nats.Conn
+var shuttingDown bool
 
 func Init() {
 	var err error
@@ -17,7 +19,22 @@ func Init() {
 	}
 	log.Printf("Connecting to NATS at %s ...\n", natsURL)
 
-	NC, err = nats.Connect(natsURL)
+	NC, err = nats.Connect(natsURL,
+		nats.MaxReconnects(-1), // keep trying to reconnect indefinitely
+		nats.ReconnectWait(5 * time.Second), // wait 5 seconds between reconnect attempts
+		nats.ClosedHandler(func(nc *nats.Conn) {
+			if shuttingDown {
+                return
+            }	
+			log.Printf("Reconnected to NATS at %s\n", nc.ConnectedUrl())
+		}),
+		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+			if shuttingDown {
+                return
+            }
+			log.Printf("Disconnected from NATS: %v\n", err)
+		}), 
+	)
 	if err != nil {
 		log.Fatal("could not connect to NATS:", err)
 	}
@@ -26,6 +43,7 @@ func Init() {
 
 func Close() {
 	if NC != nil {
+		shuttingDown = true
 		NC.Close()
 		log.Println("NATS connection closed.")
 	}
