@@ -14,7 +14,7 @@ import (
 // GET /api/rules — get all rules
 func GetRules(c *gin.Context) {
     rows, err := db.DB.Query(`
-        SELECT id, name, threshold, action, duration, created_at
+        SELECT id, name, threshold, action, duration, tag, created_at
         FROM policy_rules
         ORDER BY created_at DESC
     `)
@@ -28,7 +28,7 @@ func GetRules(c *gin.Context) {
     for rows.Next() {
         var r models.PolicyRule
         err := rows.Scan(&r.ID, &r.Name, &r.Threshold,
-                         &r.Action, &r.Duration, &r.CreatedAt)
+                         &r.Action, &r.Duration, &r.Tag, &r.CreatedAt)
         if err != nil {
             continue
         }
@@ -47,9 +47,9 @@ func CreateRule(c *gin.Context) {
     }
 
     result, err := db.DB.Exec(`
-        INSERT INTO policy_rules (name, threshold, action, duration)
-        VALUES (?, ?, ?, ?)`,
-        rule.Name, rule.Threshold, rule.Action, rule.Duration,
+        INSERT INTO policy_rules (name, threshold, action, duration, tag)
+        VALUES (?, ?, ?, ?, ?)`,
+        rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag,
     )
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -71,10 +71,10 @@ func GetRule(c *gin.Context) {
     var rule models.PolicyRule
 
     err := db.DB.QueryRow(`
-        SELECT id, name, threshold, action, duration, created_at
+        SELECT id, name, threshold, action, duration, tag, created_at
         FROM policy_rules WHERE id = ?`, id,
     ).Scan(&rule.ID, &rule.Name, &rule.Threshold,
-           &rule.Action, &rule.Duration, &rule.CreatedAt)
+           &rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
 
     if err == sql.ErrNoRows {
         c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -99,9 +99,9 @@ func UpdateRule(c *gin.Context) {
 
     result, err := db.DB.Exec(`
         UPDATE policy_rules
-        SET name=?, threshold=?, action=?, duration=?
+        SET name=?, threshold=?, action=?, duration=?, tag=?
         WHERE id=?`,
-        rule.Name, rule.Threshold, rule.Action, rule.Duration, id,
+        rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag, id,
     )
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

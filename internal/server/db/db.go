@@ -31,6 +31,7 @@ func createTables() error {
         threshold  INTEGER NOT NULL,
         action     TEXT    NOT NULL,
         duration   INTEGER NOT NULL,
+        tag        TEXT    NOT NULL DEFAULT '',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`)
     if err != nil {
