@@ -88,25 +88,25 @@ func main() {
 						// Still high traffic — extend the block
 						duration := time.Duration(rule.Duration) * time.Second
 						program.BlockIP(ip, duration)
-						log.Printf("[%s] IP %s still active (%d req/s) — extending block\n",
-							cfg.AgentID, ipStr, reqPerSec)
+						log.Printf("IP %s still active (%d req/s) — extending block\n",
+							ipStr, reqPerSec)
 					} else {
 						// Traffic calmed down — unblock
 						program.UnblockIP(ip)
-						log.Printf("[%s] IP %s calmed down (%d req/s) — unblocking\n",
-							cfg.AgentID, ipStr, reqPerSec)
+						log.Printf("IP %s calmed down (%d req/s) — unblocking\n",
+							ipStr, reqPerSec)
 					}
 				} else if rule != nil {
 					if rule.Action == "block" {
 						// Exceeds DDoS threshold — block for X seconds
 						duration := time.Duration(rule.Duration) * time.Second
 						program.BlockIP(ip, duration)
-						log.Printf("[%s] IP %s exceeds limit (%d req/s) — blocking for %ds!\n",
-							cfg.AgentID, ipStr, reqPerSec, rule.Duration)
+						log.Printf("IP %s exceeds limit (%d req/s) — blocking for %ds!\n",
+							ipStr, reqPerSec, rule.Duration)
 					} else if rule.Action == "ratelimit" {
 						// Exceeds rate limit — token bucket in eBPF handles dropping
-						log.Printf("[%s] IP %s is being rate limited (%d req/s)\n",
-							cfg.AgentID, ipStr, reqPerSec)
+						log.Printf("IP %s is being rate limited (%d req/s)\n",
+							ipStr, reqPerSec)
 					}
 				}
 
