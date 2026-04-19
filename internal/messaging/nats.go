@@ -21,7 +21,7 @@ func Init() {
 	NC, err = nats.Connect(natsURL,
 		nats.MaxReconnects(-1), // keep trying to reconnect indefinitely
 		nats.ReconnectWait(5 * time.Second), // wait 5 seconds between reconnect attempts
-		nats.ClosedHandler(func(nc *nats.Conn) {
+		nats.ReconnectHandler(func(nc *nats.Conn) {
 			if shuttingDown {
                 return
             }	
