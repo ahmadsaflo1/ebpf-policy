@@ -17,7 +17,6 @@ func Init() {
 	if natsURL == "" {
 		natsURL = nats.DefaultURL
 	}
-	log.Printf("Connecting to NATS at %s ...\n", natsURL)
 
 	NC, err = nats.Connect(natsURL,
 		nats.MaxReconnects(-1), // keep trying to reconnect indefinitely

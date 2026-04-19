@@ -21,8 +21,6 @@ func NewRuleStore() *RuleStore {
 	s := &RuleStore{
         rules: make(map[int]models.PolicyRule),
     }
-    // Load cached rules from disk on startup
-    s.loadFromDisk()
     return s
 }
 
@@ -33,6 +31,14 @@ func (s *RuleStore) Upsert(rule models.PolicyRule) {
 	log.Printf("Rule upserted: Name=%s (threshold: %d req/s)\n",
 		rule.Name, rule.Threshold)
 	s.saveToDisk()
+}
+
+// UpsertSilent adds or updates a rule without logging — used on startup
+func (s *RuleStore) UpsertSilent(rule models.PolicyRule) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    s.rules[rule.ID] = rule
+    s.saveToDisk()
 }
 
 func (s *RuleStore) Delete(id int) {
@@ -96,8 +102,8 @@ func (s *RuleStore) Clear() {
     log.Println("Rule store cleared — cache deleted")
 }
 
-// loadFromDisk loads cached rules from local JSON file on startup
-func (s *RuleStore) loadFromDisk() {
+// LoadFromDisk loads cached rules from local JSON file on startup
+func (s *RuleStore) LoadFromDisk() {
     data, err := os.ReadFile(rulesFile)
     if err != nil {
         // File does not exist yet — normal on first run
@@ -139,6 +145,4 @@ func (s *RuleStore) saveToDisk() {
         log.Println("Could not write rules to disk:", err)
         return
     }
-
-    log.Printf("Saved %d rules to disk\n", len(rules))
 }

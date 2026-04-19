@@ -37,7 +37,7 @@ func main() {
 
 	// Try to fetch rules from server on startup — max 4 attempts
 	// If all fail, falls back to cached rules
-	go connectToServer(cfg, store)
+	connectToServer(cfg, store)
 
 	// Start listening for rule updates and deletions from server via NATS
 	listener := config.NewListener(
@@ -139,12 +139,8 @@ func connectToServer(cfg *config.Config, store *config.RuleStore) {
 		if err == nil {
 			// Filter rules by env tag
             filtered := filterRules(rules, cfg.Env)
-
-			// Server reachable — clear cache and load fresh rules
-			log.Println("Connected to server — loading fresh rules")
-			store.Clear()
 			for _, rule := range filtered {
-				store.Upsert(rule)
+				store.UpsertSilent(rule)
 			}
 			log.Printf("Fetched %d rules from server\n", len(filtered))
 			return
@@ -160,6 +156,7 @@ func connectToServer(cfg *config.Config, store *config.RuleStore) {
 
 	// All attempts failed — use cached rules
 	log.Println("Could not reach server after 4 attempts — using cached rules")
+	store.LoadFromDisk()
 }
 
 // watchServer continuously monitors server health while agent is running.

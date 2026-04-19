@@ -2,7 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"log"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +28,5 @@ func FetchRules(serverURL string, env string) ([]models.PolicyRule, error) {
 		return nil, err
 	}
 
-	log.Printf("Fetched %d policies from server\n", len(rules))
 	return rules, nil
 }
