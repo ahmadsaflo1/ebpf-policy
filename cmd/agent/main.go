@@ -15,6 +15,9 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
 )
 
+// serverAvailable tracks whether the policy server is reachable
+var serverAvailable bool
+
 func main() {
 	log.Println("Starting Policy Agent ...")
 
@@ -53,7 +56,7 @@ func main() {
 	}
 
 	// Start metrics reporter
-	rep := reporter.New(cfg.AgentID)
+	rep := reporter.New(cfg.AgentID, &serverAvailable)
 	rep.Start()
 
 	// Track previous counts to calculate req/s delta
@@ -143,6 +146,7 @@ func connectToServer(cfg *config.Config, store *config.RuleStore) {
 				store.UpsertSilent(rule)
 			}
 			log.Printf("Fetched %d rules from server\n", len(filtered))
+			serverAvailable = true
 			return
 		}
 
@@ -157,6 +161,7 @@ func connectToServer(cfg *config.Config, store *config.RuleStore) {
 	// All attempts failed — use cached rules
 	log.Println("Could not reach server after 4 attempts — using cached rules")
 	store.LoadFromDisk()
+	serverAvailable = false
 }
 
 // watchServer continuously monitors server health while agent is running.
@@ -166,23 +171,21 @@ func watchServer(cfg *config.Config, store *config.RuleStore) {
 	// Wait for connectToServer to finish first
 	time.Sleep(30 * time.Second)
 
-	serverWasDown := false
-
 	ticker := time.NewTicker(15 * time.Second)
 	for range ticker.C {
 		rules, err := config.FetchRules(cfg.ServerURL, cfg.Env)
 		if err != nil {
-			if !serverWasDown {
+			if serverAvailable {
 				// Server just went down
 				log.Printf("Server is down: %v — continuing with current rules\n", err)
-				serverWasDown = true
+				serverAvailable = false
 			} else {
 				log.Println("Server still down — retrying in 15s")
 			}
 			continue
 		}
 
-		if serverWasDown {
+		if !serverAvailable {
 			// Filter rules by env tag
             filtered := filterRules(rules, cfg.Env)
 			
@@ -193,7 +196,7 @@ func watchServer(cfg *config.Config, store *config.RuleStore) {
 				store.Upsert(rule)
 			}
 			log.Printf("Fetched %d rules from server\n",len(filtered))
-			serverWasDown = false
+			serverAvailable = true
 		}
 	}
 }
