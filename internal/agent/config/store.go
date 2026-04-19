@@ -44,8 +44,15 @@ func (s *RuleStore) UpsertSilent(rule models.PolicyRule) {
 func (s *RuleStore) Delete(id int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	rule, exists := s.rules[id]
+    if !exists {
+        log.Printf("Rule not found for deletion: ID=%d\n", id)
+        return
+    }
+
 	delete(s.rules, id)
-	log.Printf("Rule deleted: ID=%d\n", id)
+	log.Printf("Rule deleted: Name=%s (ID=%d)\n", rule.Name, id)
 	s.saveToDisk()
 }
 

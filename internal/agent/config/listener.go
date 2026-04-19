@@ -39,7 +39,6 @@ func (l *Listener) Start(env string) error {
                 log.Printf("Failed to unmarshal policy update on topic %s: %v\n", t, err)
                 return
             }
-            log.Printf("Received policy update on topic '%s': %s\n", t, rule.Name)
             l.onUpdate(rule)
         })
         if err != nil {
@@ -47,16 +46,27 @@ func (l *Listener) Start(env string) error {
         }
     }
 
-    // Listen for policy deletions
-    err := messaging.Subscribe("policy.delete", func(data []byte) {
-        var payload map[string]int
-        if err := json.Unmarshal(data, &payload); err != nil {
-            log.Println("Failed to unmarshal policy delete:", err)
-            return
+    // Subscribe to delete topics — global and env-specific
+    deleteTopics := []string{"policy.delete"}
+    if env != "" {
+        deleteTopics = append(deleteTopics, "policy.delete."+env)
+    }
+
+    for _, topic := range deleteTopics {
+        t := topic
+        err := messaging.Subscribe(t, func(data []byte) {
+            var payload map[string]int
+            if err := json.Unmarshal(data, &payload); err != nil {
+                log.Printf("Failed to unmarshal policy delete on topic %s: %v\n", t, err)
+                return
+            }
+            ruleID := payload["id"]
+            l.onDelete(ruleID)
+        })
+        if err != nil {
+            return err
         }
-        ruleID := payload["id"]
-        log.Printf("Received policy delete for ID: %d\n", ruleID)
-        l.onDelete(ruleID)
-    })
-    return err
+    }
+
+    return nil
 }

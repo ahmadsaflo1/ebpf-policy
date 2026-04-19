@@ -36,17 +36,22 @@ func PublishUpdate(rule models.PolicyRule) {
 }
 
 // Publish that a rule has been removed
-func PublishDelete(ruleID int) {
-	data, err := json.Marshal(map[string]int{"id": ruleID})
+func PublishDelete(rule models.PolicyRule) {
+	data, err := json.Marshal(map[string]int{"id": rule.ID})
 	if err != nil {
 		log.Println("Could not serialize rule-id:", err)
 		return
 	}
 
-	err = messaging.Publish(TopicPolicyDelete, data)
+	topic := "policy.delete"
+    if rule.Tag != "" {
+        topic = "policy.delete." + rule.Tag
+    }
+
+	err = messaging.Publish(topic, data)
 	if err != nil {
 		log.Println("Could not publish policy delete:", err)
 	}
 
-	log.Printf("Published policy delete for rule ID: %d\n", ruleID)
+	log.Printf("Published rule delete: %s (topic: %s)\n", rule.Name, topic)
 }

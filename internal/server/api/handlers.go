@@ -32,7 +32,7 @@ func GetRules(c *gin.Context) {
             FROM policy_rules
             ORDER BY created_at DESC`)
     }
-    
+
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
@@ -140,24 +140,40 @@ func UpdateRule(c *gin.Context) {
 
 // DELETE /api/rules/:id — delete a specific rule
 func DeleteRule(c *gin.Context) {
-    id := c.Param("id")
+id := c.Param("id")
 
+    // Fetch rule before deleting to get name and tag for publishing
+    var rule models.PolicyRule
+    err := db.DB.QueryRow(`
+        SELECT id, name, threshold, action, duration, tag, created_at
+        FROM policy_rules WHERE id = ?`, id,
+    ).Scan(&rule.ID, &rule.Name, &rule.Threshold,
+           &rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
+
+    if err == sql.ErrNoRows {
+        c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+        return
+    }
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+
+    // Delete from database
     result, err := db.DB.Exec("DELETE FROM policy_rules WHERE id = ?", id)
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
     }
 
-	// Check how many rows were actually deleted
     rowsAffected, _ := result.RowsAffected()
     if rowsAffected == 0 {
         c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
         return
     }
 
-	// Publish to NATS so the agent knows about the deleted rule
-	ruleID, _ := strconv.Atoi(id)
-	policy.PublishDelete(ruleID)
+    // Publish delete to relevant agents
+    policy.PublishDelete(rule)
 
     c.JSON(http.StatusOK, gin.H{"message": "rule deleted"})
 }
