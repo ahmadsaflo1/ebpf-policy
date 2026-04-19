@@ -1,3 +1,6 @@
+// Package ebpf loads the compiled eBPF/XDP policy program onto a network
+// interface and exposes helpers for managing the block list, rate-limit state,
+// and per-IP request counters maintained by the kernel program.
 package ebpf
 
 import (
@@ -6,13 +9,22 @@ import (
     "log"
     "net"
     "time"
+    "os"
 
     "github.com/cilium/ebpf/link"
 )
 
+// PolicyProgram wraps the loaded eBPF objects and the XDP link attached to
+// the network interface. Use Load to create one; call Close when done.
 type PolicyProgram struct {
-    objs PolicyObjects
-    xdp  link.Link
+	objs PolicyObjects
+	xdp  link.Link
+}
+
+// RateLimitState holds the token bucket state for an IP
+type RateLimitState struct {
+    Tokens     uint64
+    LastRefill uint64
 }
 
 // Load loads the eBPF program and attaches it to the specified network interface.
@@ -28,11 +40,10 @@ func Load(iface string) (*PolicyProgram, error) {
         return nil, fmt.Errorf("Failed to get interface by name %s: %w", iface, err)
     }
 
-    // Attach the eBPF program to the specified network interface using XDP with SKB mode for better compatibility across different environments
     p.xdp, err = link.AttachXDP(link.XDPOptions{
         Program:   p.objs.PolicyFilter,
         Interface: ifaceObj.Index,
-        Flags:     link.XDPGenericMode, // Use generic mode for compatibility
+        Flags:     link.XDPGenericMode, // generic mode for broader driver compatibility
     })
     if err != nil {
         return nil, fmt.Errorf("Failed to attach XDP program: %w", err)
@@ -51,11 +62,36 @@ func (p *PolicyProgram) Close() {
     log.Println("Successfully unloaded eBPF program and closed resources")
 }
 
-// BlockIP adds the specified IP address to the block list for a given duration.
+// BlockIP adds the specified IP address to the block list with a duration for how long it should be blocked.
 func (p *PolicyProgram) BlockIP(ip net.IP, duration time.Duration) error {
     key := ipToUint32(ip)
-    blockedUntil := uint64(time.Now().Add(duration).UnixNano())
+    
+    ktimeNs, err := getKtimeNs()
+    if err != nil {
+        return fmt.Errorf("Failed to get ktime in nanoseconds: %w", err)
+    }
+    
+    blockedUntil := ktimeNs + uint64(duration.Nanoseconds())
     return p.objs.BlockList.Put(key, blockedUntil)
+}
+
+
+// IsBlocked checks if an IP address is currently blocked
+func(p *PolicyProgram) IsBlocked(ip net.IP) bool {
+    key := ipToUint32(ip)
+
+    var blockedUntil uint64
+    err := p.objs.BlockList.Lookup(key, &blockedUntil)
+    if err != nil {
+        return false
+    }
+
+    ktimeNs, err := getKtimeNs()
+    if err != nil {
+        return false
+    }
+
+    return ktimeNs < blockedUntil
 }
 
 // UnblockIP removes the specified IP address from the block list.
@@ -80,15 +116,51 @@ func (p *PolicyProgram) GetAllStats() (map[string]uint64, error) {
     return stats, iter.Err()
 }
 
-// Helper functions to convert between net.IP and uint32 for map keys
-func ipToUint32(ip net.IP) uint32 {
-    ip = ip.To4()
-    return binary.BigEndian.Uint32(ip)
+// GetRateLimitStats returns the current token bucket state for an IP.
+func (p *PolicyProgram) GetRateLimitStats(ip net.IP) (*RateLimitState, error) {
+    key := ipToUint32(ip)
+
+    var state RateLimitState
+    err := p.objs.RateLimitMap.Lookup(key, &state)
+    if err != nil {
+        // IP not found — not rate limited yet
+        return nil, nil
+    }
+
+    return &state, nil
 }
 
-// Convert uint32 back to net.IP
+// IsRateLimited checks if an IP is currently rate limited (no tokens left).
+func (p *PolicyProgram) IsRateLimited(ip net.IP) bool {
+    state, err := p.GetRateLimitStats(ip)
+    if err != nil || state == nil {
+        return false
+    }
+    return state.Tokens == 0
+}
+
+// getKtimeNs retrieves the current kernel time in nanoseconds, which is used for timing the block duration in the eBPF program.
+func getKtimeNs() (uint64, error) {
+    data, err := os.ReadFile("/proc/uptime")
+    if err != nil {
+        return 0, err
+    }
+
+    var uptime float64
+    fmt.Sscanf(string(data), "%f", &uptime)
+    return uint64(uptime * 1e9), nil
+}
+
+// ipToUint32 converts a net.IP to a big-endian uint32 suitable for use as an
+// eBPF map key.
+func ipToUint32(ip net.IP) uint32 {
+	ip = ip.To4()
+	return binary.BigEndian.Uint32(ip)
+}
+
+// uint32ToIP converts a big-endian uint32 eBPF map key back to a net.IP.
 func uint32ToIP(n uint32) net.IP {
-    ip := make(net.IP, 4)
-    binary.BigEndian.PutUint32(ip, n)
-    return ip
+	ip := make(net.IP, 4)
+	binary.BigEndian.PutUint32(ip, n)
+	return ip
 }

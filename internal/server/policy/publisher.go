@@ -1,3 +1,5 @@
+// Package policy publishes rule lifecycle events (create/update/delete) to
+// NATS so that enforcement agents receive changes in real time.
 package policy
 
 import (
@@ -12,7 +14,9 @@ const (
 	TopicPolicyDelete  = "policy.delete"
 )
 
-// Publish that a rule has been created or updated
+// PublishUpdate serialises rule and publishes it to the appropriate NATS topic.
+// Tagged rules are published to "policy.update.<tag>"; untagged rules go to
+// "policy.update" so all agents receive them.
 func PublishUpdate(rule models.PolicyRule) {
 	data, err := json.Marshal(rule)
 	if err != nil {
@@ -20,26 +24,38 @@ func PublishUpdate(rule models.PolicyRule) {
 		return
 	}
 
-	err = messaging.Publish(TopicPolicyUpdates, data)
-	if err != nil {
-		log.Println("Could not publish policy update:", err)
-	}
+	topic := TopicPolicyUpdates
+    if rule.Tag != "" {
+        topic = TopicPolicyUpdates + "." + rule.Tag
+    }
 
-	log.Printf("Published policy update: %s\n", rule.Name)
+    err = messaging.Publish(topic, data)
+    if err != nil {
+        log.Println("Could not publish policy update:", err)
+        return
+    }
+
+    log.Printf("Published policy update: %s (topic: %s)\n", rule.Name, topic)
 }
 
-// Publish that a rule has been removed
-func PublishDelete(ruleID int) {
-	data, err := json.Marshal(map[string]int{"id": ruleID})
+// PublishDelete publishes the ID of the deleted rule to "policy.delete" (or
+// "policy.delete.<tag>" for tagged rules) so agents can remove it locally.
+func PublishDelete(rule models.PolicyRule) {
+	data, err := json.Marshal(map[string]int{"id": rule.ID})
 	if err != nil {
 		log.Println("Could not serialize rule-id:", err)
 		return
 	}
 
-	err = messaging.Publish(TopicPolicyDelete, data)
+	topic := "policy.delete"
+    if rule.Tag != "" {
+        topic = "policy.delete." + rule.Tag
+    }
+
+	err = messaging.Publish(topic, data)
 	if err != nil {
 		log.Println("Could not publish policy delete:", err)
 	}
 
-	log.Printf("Published policy delete for rule ID: %d\n", ruleID)
+	log.Printf("Published rule delete: %s (topic: %s)\n", rule.Name, topic)
 }

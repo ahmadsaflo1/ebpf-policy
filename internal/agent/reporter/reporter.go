@@ -1,3 +1,5 @@
+// Package reporter periodically publishes per-IP traffic metrics from the
+// agent to the central server via the "metrics.report" NATS topic.
 package reporter
 
 import (
@@ -8,18 +10,22 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
 )
 
+// Reporter accumulates per-IP statistics during a reporting window and
+// publishes a MetricsReport to the server at regular intervals.
 type Reporter struct {
-	agentID	string
-	interval time.Duration
-	stats  []models.ClientStats
+	agentID         string
+	interval        time.Duration
+	stats           []models.ClientStats
+	serverAvailable *bool // shared flag; reporter skips send when false
 }
 
 // New creates a new Reporter instance with the given agent ID.
-func New(agentID string) *Reporter {
+func New(agentID string, serverAvailable *bool) *Reporter {
 	return &Reporter{
 		agentID:  agentID,
-		interval: 10 * time.Second, // default reporting interval
+		interval: 10 * time.Second,
 		stats:    make([]models.ClientStats, 0),
+		serverAvailable: serverAvailable,
 	}
 }
 
@@ -42,8 +48,21 @@ func (r *Reporter) Start() {
 // send compiles the current stats into a report and sends it to the central server via NATS.
 func (r *Reporter) send() {
 	if len(r.stats) == 0 {
-		return // nothing to report
+		return
 	}
+
+
+    if messaging.NC == nil || !messaging.NC.IsConnected() {
+        log.Println("Reporter: NATS not connected — skipping report")
+        r.stats = make([]models.ClientStats, 0)
+        return
+    }
+
+	if !*r.serverAvailable {
+        log.Println("Reporter: server not available — skipping report")
+        r.stats = make([]models.ClientStats, 0)
+        return
+    }
 
 	report := models.MetricsReport{
 		AgentID: r.agentID,
@@ -57,12 +76,12 @@ func (r *Reporter) send() {
 		return
 	}
 
-	err = messaging.Publish("report.matrix", data)
+	err = messaging.Publish("metrics.report", data)
 	if err != nil {
 		log.Println("Failed to publish report:", err)
 		return
 	}
 
 	log.Printf("Report sent: %d clients\n", len(r.stats))
-	r.stats = r.stats[:0] // clear stats after sending
+	r.stats = r.stats[:0]
 }

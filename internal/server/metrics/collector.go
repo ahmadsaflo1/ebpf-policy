@@ -1,3 +1,5 @@
+// Package metrics subscribes to agent telemetry reports and persists them in
+// the database for later inspection.
 package metrics
 
 import (
@@ -33,6 +35,7 @@ func StartCollector(){
 	log.Println("Metrics collector started and subscribed to metrics.reports")
 }
 
+// saveClientStats inserts a single per-IP stat row into the client_stats table.
 func saveClientStats(agentID string, stat models.ClientStats) {
 	_, err := db.DB.Exec(`
 		INSERT INTO client_stats (agent_id, ip, req_per_sec, blocked, passed, recorded_at)

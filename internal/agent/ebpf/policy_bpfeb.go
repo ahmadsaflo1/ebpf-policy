@@ -19,6 +19,12 @@ type PolicyIpStats struct {
 	LastSeen uint64
 }
 
+type PolicyRateLimitState struct {
+	_          structs.HostLayout
+	Tokens     uint64
+	LastRefill uint64
+}
+
 // LoadPolicy returns the embedded CollectionSpec for Policy.
 func LoadPolicy() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_PolicyBytes)
@@ -69,6 +75,7 @@ type PolicyProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type PolicyMapSpecs struct {
 	BlockList    *ebpf.MapSpec `ebpf:"block_list"`
+	RateLimitMap *ebpf.MapSpec `ebpf:"rate_limit_map"`
 	RequestCount *ebpf.MapSpec `ebpf:"request_count"`
 }
 
@@ -99,12 +106,14 @@ func (o *PolicyObjects) Close() error {
 // It can be passed to LoadPolicyObjects or ebpf.CollectionSpec.LoadAndAssign.
 type PolicyMaps struct {
 	BlockList    *ebpf.Map `ebpf:"block_list"`
+	RateLimitMap *ebpf.Map `ebpf:"rate_limit_map"`
 	RequestCount *ebpf.Map `ebpf:"request_count"`
 }
 
 func (m *PolicyMaps) Close() error {
 	return _PolicyClose(
 		m.BlockList,
+		m.RateLimitMap,
 		m.RequestCount,
 	)
 }
