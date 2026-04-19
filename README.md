@@ -1,33 +1,35 @@
 # ebpf-policy
 
-> Distribuerat system för hastighetsbegränsning och IP-blockering med nätverksfiltrering på kärnnivå och centraliserad policyhantering i realtid.
+> Distributed DDoS mitigation and traffic rate-limiting system with kernel-level packet filtering and centralized real-time policy management.
 
-**eBPF/XDP** filtrerar paket direkt i nätverksdrivrutinen — långt innan de når applikationslagret — medan policybeslut distribueras i realtid via **NATS** till samtliga kör-agenter.
+**eBPF/XDP** filters packets directly at the network driver level — long before they reach the application layer — while policy decisions are distributed in real time via **NATS** to all running agents.
 
 ---
 
-## Innehållsförteckning
+## Table of Contents
 
-- [Arkitektur](#arkitektur)
-- [Dataflöde](#dataflöde)
-- [Krav](#krav)
+- [Architecture](#architecture)
+- [Data Flow](#data-flow)
+- [Rule Matching](#rule-matching)
+- [Environment Tags](#environment-tags)
+- [Requirements](#requirements)
 - [Installation](#installation)
-- [Köra systemet](#köra-systemet)
+- [Running the System](#running-the-system)
 - [REST API](#rest-api)
-- [Databasschema](#databasschema)
-- [Teknologier](#teknologier)
+- [Database Schema](#database-schema)
+- [Technologies](#technologies)
 
 ---
 
-## Arkitektur
+## Architecture
 
 ```
 ┌──────────────────────────────┐
-│         Policy Server        │   Kontrollplan
+│         Policy Server        │   Control Plane
 │   REST API :8080             │
-│   SQLite-databas             │
-│   Policy-publicering         │
-│   Metrikinsamling            │
+│   SQLite database            │
+│   Policy publishing          │
+│   Metrics collection         │
 └──────────────┬───────────────┘
                │
            NATS pub/sub
@@ -35,71 +37,138 @@
        ┌───────┴────────┐
        │                │
 ┌──────▼──────┐  ┌──────▼──────┐
-│   Agent 1   │  │   Agent N   │   Kantpunkter (edge nodes)
+│   Agent 1   │  │   Agent N   │   Edge Nodes
 │   (eBPF)    │  │   (eBPF)    │
 └─────────────┘  └─────────────┘
 ```
 
-### Komponenter
+### Components
 
-| Komponent | Beskrivning |
+| Component | Description |
 |-----------|-------------|
-| **Server** | Hanterar policyer via REST API, persisterar regler i SQLite och distribuerar ändringar via NATS |
-| **Agent** | Körs på varje nod, laddar eBPF-programmet till kärnan och blockerar IP-adresser som överskrider definierade tröskelvärden |
-| **eBPF/XDP** | C-program på kärnnivå som filtrerar paket direkt på nätverksgränssnittsnivå med minimal latens |
-| **NATS** | Meddelandebroker som distribuerar policyändringar och aggregerar metrics från samtliga agenter |
+| **Server** | Manages policies via REST API, persists rules in SQLite, and distributes changes via NATS |
+| **Agent** | Runs on each node, loads the eBPF program into the kernel, and blocks IPs that exceed defined thresholds |
+| **eBPF/XDP** | Kernel-space C program that filters packets directly at the network interface level with minimal latency |
+| **NATS** | Message broker that distributes policy changes and aggregates metrics from all agents |
 
-### Meddelandekanaler (NATS)
+### NATS Topics
 
-| Ämne | Riktning | Syfte |
-|------|----------|-------|
-| `policy.update` | Server → Agenter | Ny eller uppdaterad policyregel |
-| `policy.delete` | Server → Agenter | Borttagen policyregel |
-| `metrics.report` | Agenter → Server | Trafikstatistik per IP, rapporteras var 10:e sekund |
+Rules with a `tag` are only sent to agents with a matching `ENV`. Global rules (no tag) are sent to all agents.
+
+| Topic | Direction | Purpose |
+|-------|-----------|---------|
+| `policy.update` | Server → Agents | New or updated global rule (no tag) |
+| `policy.update.<tag>` | Server → Agents | New or updated rule for a specific environment |
+| `policy.delete` | Server → Agents | Deleted global rule |
+| `policy.delete.<tag>` | Server → Agents | Deleted rule for a specific environment |
+| `metrics.report` | Agents → Server | Per-IP traffic stats, reported every 10 seconds |
 
 ---
 
-## Dataflöde
+## Data Flow
 
-**Paketfiltrering (per agent):**
+**Packet filtering (per agent, eBPF/XDP in kernel):**
 
 ```
-Inkommande nätverkspaket
-  → XDP-program (eBPF, kärnan)
-  → Kontrollera block_list
-  → Träff:  XDP_DROP  — paketet kasseras omedelbart
-  → Miss:   räknaren ökas, XDP_PASS
+Incoming network packet
+  → XDP program checks block_list
+      → Match and not expired:  XDP_DROP  — packet discarded immediately
+      → Expired block:          removed from block_list, XDP_PASS
+  → Token bucket check (rate limiting)
+      → No tokens left:         XDP_DROP
+      → Tokens available:       counter incremented, token deducted, XDP_PASS
 ```
 
-**Policyuppdatering (end-to-end):**
+**Policy update (end-to-end):**
 
 ```
 PUT /api/rules/:id
-  → REST-hanterare validerar och tar emot begäran
-  → Regel persisteras i SQLite
-  → Ändring publiceras på NATS "policy.update"
-  → Agenter tar emot meddelandet och uppdaterar regelcachen
-  → Nästa paketkontroll tillämpar den nya regeln
+  → REST handler validates and accepts the request
+  → Rule persisted to SQLite
+  → Change published on NATS "policy.update[.<tag>]"
+  → Matching agents receive the message and update their rule cache
+  → Next packet check applies the new rule
+```
+
+**Metrics loop (per agent):**
+
+```
+Every 10 seconds:
+  → Agent reads delta from eBPF map (request_count)
+  → Calculates req/s per IP
+  → Matches against active rules (see Rule Matching)
+  → Applies block/rate_limit in the kernel
+  → Publishes MetricsReport to NATS "metrics.report"
+  → Server persists stats to client_stats
 ```
 
 ---
 
-## Krav
+## Rule Matching
 
-| Beroende | Version |
-|----------|---------|
+The agent evaluates each IP against all active rules using the following priority order:
+
+1. Find all rules where the IP's req/s exceeds the rule's `threshold`.
+2. **`block` always takes priority over `rate_limit`.**
+3. Among rules with the same action, the rule with the **highest threshold** wins (most specific rule takes precedence).
+
+### Token Bucket (kernel-level rate limiting)
+
+The eBPF program implements a per-IP token bucket directly in the `rate_limit_map` BPF map:
+
+| Parameter | Value |
+|-----------|-------|
+| Refill rate | 100 tokens/second |
+| Max capacity (burst) | 200 tokens |
+
+Packets are silently dropped when the token quota is exhausted. Entries in `block_list` store an expiration timestamp in nanoseconds (kernel time) and are cleaned up automatically without explicit deletion.
+
+### Agent Resilience
+
+| Situation | Behavior |
+|-----------|----------|
+| Server unreachable at startup | Retries 4 times (5 s interval), then falls back to disk cache |
+| No disk cache and server down | Starts without rules, keeps retrying |
+| Server comes back online | Fetches fresh rules automatically (health check every 15 s) |
+| NATS connection drops | Reconnects with exponential backoff (max wait 5 s) |
+
+The rule cache is saved to `/tmp/ebpf-policy-rules.json` and updated on every successful fetch.
+
+---
+
+## Environment Tags
+
+Rules can be scoped to a specific environment via the `tag` field. Agents filter rules based on their `ENV` environment variable:
+
+- **Global rule** (empty `tag`): sent to and applied by all agents.
+- **Tagged rule** (e.g. `tag: "production"`): sent only to agents with `ENV=production`.
+
+```bash
+# Production agent receives global rules + rules tagged "production"
+sudo ENV=production AGENT_ID=prod-agent-1 ./agent
+
+# Staging agent receives global rules + rules tagged "staging"
+sudo ENV=staging AGENT_ID=staging-agent-1 ./agent
+```
+
+---
+
+## Requirements
+
+| Dependency | Version |
+|------------|---------|
 | Ubuntu / Debian Linux | Kernel ≥ 5.9 |
 | Go | 1.21+ |
-| clang / llvm | Senaste stabila |
+| clang / llvm | Latest stable |
 | libbpf-dev | Via apt |
-| Linux-headers | Matchande aktiv kärna |
-| NATS-server | Tillhandahålls separat |
+| Linux headers | Matching active kernel |
+| NATS server | Provided separately |
 
 ---
 
 ## Installation
 
-### 1. Systemberoenden
+### 1. System dependencies
 
 ```bash
 sudo apt update && sudo apt install -y \
@@ -115,17 +184,17 @@ go install github.com/cilium/ebpf/cmd/bpf2go@latest
 export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
-> Lägg till `export PATH=$PATH:$(go env GOPATH)/bin` i `~/.bashrc` eller `~/.profile` för att göra inställningen permanent.
+> Add `export PATH=$PATH:$(go env GOPATH)/bin` to `~/.bashrc` or `~/.profile` to make this permanent.
 
-### 3. Kompilera eBPF-programmet
+### 3. Compile the eBPF program
 
 ```bash
 cd ebpf && make && cd ..
 ```
 
-Kompilerar `policy.c` till eBPF-bytekod (`policy.o`) med clang.
+Compiles `policy.c` into eBPF bytecode (`policy.o`) using clang.
 
-### 4. Generera Go-bindningar
+### 4. Generate Go bindings
 
 ```bash
 cd internal/agent/ebpf
@@ -133,16 +202,16 @@ bpf2go -go-package ebpf Policy ../../../ebpf/policy.c
 cd ../../..
 ```
 
-Genererade filer:
+Generated files:
 
-| Fil | Beskrivning |
-|-----|-------------|
-| `policy_bpfel.go` | Go-bindningar för little-endian (t.ex. x86-64) |
-| `policy_bpfeb.go` | Go-bindningar för big-endian |
-| `policy_bpfel.o` | Kompilerad eBPF-bytekod för little-endian |
-| `policy_bpfeb.o` | Kompilerad eBPF-bytekod för big-endian |
+| File | Description |
+|------|-------------|
+| `policy_bpfel.go` | Go bindings for little-endian (e.g. x86-64) |
+| `policy_bpfeb.go` | Go bindings for big-endian |
+| `policy_bpfel.o` | Compiled eBPF bytecode for little-endian |
+| `policy_bpfeb.o` | Compiled eBPF bytecode for big-endian |
 
-### 5. Bygg binärerna
+### 5. Build the binaries
 
 ```bash
 go build -o server ./cmd/server/
@@ -151,7 +220,7 @@ go build -o agent ./cmd/agent/
 
 ---
 
-## Köra systemet
+## Running the System
 
 ### Server
 
@@ -159,105 +228,123 @@ go build -o agent ./cmd/agent/
 ./server
 ```
 
-Servern lyssnar på port `:8080` och ansluter till NATS på `nats://localhost:4222` som standard.
+The server listens on port `:8080` and connects to NATS at `nats://localhost:4222` by default.
 
-| Miljövariabel | Standardvärde | Beskrivning |
-|---------------|---------------|-------------|
-| `NATS_URL` | `nats://localhost:4222` | Adress till NATS-broker |
+| Environment Variable | Default | Description |
+|----------------------|---------|-------------|
+| `NATS_URL` | `nats://localhost:4222` | NATS broker address |
 
 ### Agent
 
-Agenten kräver root-behörighet för att ladda eBPF-program till kärnan.
+The agent requires root privileges to load eBPF programs into the kernel.
 
 ```bash
-sudo INTERFACE=<gränssnitt> \
-     AGENT_ID=<agent-namn> \
+sudo INTERFACE=<interface> \
+     AGENT_ID=<agent-name> \
      SERVER_URL=http://<server-ip>:8080 \
      NATS_URL=nats://<server-ip>:4222 \
+     ENV=<environment> \
      ./agent
 ```
 
-| Miljövariabel | Standardvärde | Beskrivning |
-|---------------|---------------|-------------|
-| `INTERFACE` | `eth0` | Nätverksgränssnitt att övervaka (t.ex. `ens5`, `eth0`) |
-| `AGENT_ID` | `agent-001` | Unikt identifierare för denna agent-instans |
-| `SERVER_URL` | `http://localhost:8080` | URL till policyservern |
-| `NATS_URL` | `nats://localhost:4222` | Adress till NATS-broker |
+| Environment Variable | Default | Description |
+|----------------------|---------|-------------|
+| `INTERFACE` | `eth0` | Network interface to monitor (e.g. `ens5`, `eth0`) |
+| `AGENT_ID` | `agent-001` | Unique identifier for this agent instance |
+| `SERVER_URL` | `http://localhost:8080` | URL of the policy server |
+| `NATS_URL` | `nats://localhost:4222` | NATS broker address |
+| `ENV` | *(empty — global)* | Environment tag for rule filtering (e.g. `production`, `staging`) |
 
 ---
 
 ## REST API
 
-Bas-URL: `http://<server>:8080`
+Base URL: `http://<server>:8080`
 
-| Metod | Endpoint | Beskrivning |
-|-------|----------|-------------|
-| `GET` | `/health` | Hälsostatus för servern |
-| `GET` | `/api/rules` | Lista samtliga policyregler |
-| `POST` | `/api/rules` | Skapa ny policyregel |
-| `GET` | `/api/rules/:id` | Hämta en specifik regel |
-| `PUT` | `/api/rules/:id` | Uppdatera en befintlig regel |
-| `DELETE` | `/api/rules/:id` | Ta bort en regel |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Server health status |
+| `GET` | `/api/rules` | List all policy rules |
+| `POST` | `/api/rules` | Create a new policy rule |
+| `GET` | `/api/rules/:id` | Get a specific rule |
+| `PUT` | `/api/rules/:id` | Update an existing rule |
+| `DELETE` | `/api/rules/:id` | Delete a rule |
 
-### Exempel: Skapa en regel
+### Example: Create a global block rule
 
 ```bash
 curl -X POST http://localhost:8080/api/rules \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Blockera >500 förfrågningar/s",
+    "name": "Block >500 requests/s",
     "threshold": 500,
     "action": "block",
     "duration": 60
   }'
 ```
 
-**Schemafält:**
+### Example: Create an environment-specific rate limit
 
-| Fält | Typ | Beskrivning |
-|------|-----|-------------|
-| `name` | `string` | Beskrivande namn på regeln |
-| `threshold` | `int` | Tröskelvärde i förfrågningar per sekund |
-| `action` | `string` | `"block"` eller `"rate_limit"` |
-| `duration` | `int` | Blockeringstid i sekunder |
+```bash
+curl -X POST http://localhost:8080/api/rules \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Rate-limit production at >200 req/s",
+    "threshold": 200,
+    "action": "rate_limit",
+    "duration": 30,
+    "tag": "production"
+  }'
+```
+
+**Schema fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Descriptive name for the rule |
+| `threshold` | `int` | Threshold in requests per second |
+| `action` | `string` | `"block"` or `"rate_limit"` |
+| `duration` | `int` | Block duration in seconds |
+| `tag` | `string` | *(optional)* Environment tag — leave empty for a global rule |
 
 ---
 
-## Databasschema
+## Database Schema
 
-SQLite-databasen (`policy.db`) skapas automatiskt i arbetskatalogen vid uppstart.
+The SQLite database (`policy.db`) is created automatically in the working directory on startup.
 
-**`policy_rules`** — Policyregler:
+**`policy_rules`** — Policy rules:
 
 ```sql
 id          INTEGER PRIMARY KEY
 name        TEXT
 threshold   INTEGER
-action      TEXT
-duration    INTEGER
+action      TEXT        -- "block" or "rate_limit"
+duration    INTEGER     -- seconds
+tag         TEXT        -- environment tag, empty = global
 created_at  DATETIME
 ```
 
-**`client_stats`** — Trafikstatistik från agenter:
+**`client_stats`** — Traffic statistics from agents:
 
 ```sql
 id           INTEGER PRIMARY KEY
 agent_id     TEXT
 ip           TEXT
 req_per_sec  REAL
-blocked      INTEGER
-passed       INTEGER
+blocked      INTEGER    -- 1 = blocked, 0 = not blocked
+passed       INTEGER    -- total packets allowed through
 recorded_at  DATETIME
 ```
 
 ---
 
-## Teknologier
+## Technologies
 
-| Teknologi | Användning |
-|-----------|------------|
-| [cilium/ebpf](https://github.com/cilium/ebpf) | Laddar och hanterar eBPF-program från Go |
-| [NATS](https://nats.io) | Distribuerad pub/sub-meddelandehantering |
-| [Gin](https://github.com/gin-gonic/gin) | HTTP-ramverk för REST API |
-| [SQLite](https://sqlite.org) | Lokal relationsdatabas för regler och statistik |
-| eBPF/XDP | Nätverksfiltrering på kärnnivå med minimal overhead |
+| Technology | Usage |
+|------------|-------|
+| [cilium/ebpf](https://github.com/cilium/ebpf) | Loads and manages eBPF programs from Go |
+| [NATS](https://nats.io) | Distributed pub/sub messaging |
+| [Gin](https://github.com/gin-gonic/gin) | HTTP framework for the REST API |
+| [SQLite](https://sqlite.org) | Local relational database for rules and statistics |
+| eBPF/XDP | Kernel-level packet filtering with minimal overhead |
