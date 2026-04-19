@@ -2,16 +2,18 @@ package models
 
 import "time"
 
-// Metrics report sent by agents to the central server
+// MetricsReport is the payload an agent publishes to the "metrics.report"
+// NATS topic on every reporting interval.
 type MetricsReport struct {
-	AgentID   string         `json:"agent_id"`
-	Timestamp time.Time      `json:"timestamp"`
-	Clients	  []ClientStats `json:"clients"`
+	AgentID   string        `json:"agent_id"`
+	Timestamp time.Time     `json:"timestamp"`
+	Clients   []ClientStats `json:"clients"`
 }
 
+// ClientStats holds per-IP traffic counters for a single reporting window.
 type ClientStats struct {
-	IP        string   `json:"ip"`
-	ReqPerSec int  	   `json:"req_per_sec"`
-	Blocked   int      `json:"blocked"`
-	Passed    int	   `json:"passed"`
+	IP        string `json:"ip"`
+	ReqPerSec int    `json:"req_per_sec"`
+	Blocked   int    `json:"blocked"` // 1 if currently blocked, 0 otherwise
+	Passed    int    `json:"passed"`  // total packets allowed through
 }

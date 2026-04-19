@@ -1,3 +1,8 @@
+// Command agent is the eBPF policy enforcement agent.
+// It loads an XDP program onto the configured network interface, fetches
+// policy rules from the server, listens for rule changes via NATS, and
+// applies block/rate-limit decisions based on per-IP request rates observed
+// in kernel space.
 package main
 
 import (
@@ -21,28 +26,20 @@ var serverAvailable bool
 func main() {
 	log.Println("Starting Policy Agent ...")
 
-	// Load configuration from environment variables
 	cfg := config.Load()
 
-	// Connect to NATS message bus
 	messaging.Init()
 	defer messaging.Close()
 
-	// Load eBPF program onto network interface
 	program, err := ebpfloader.Load(cfg.Interface)
 	if err != nil {
 		log.Fatalf("Failed to load eBPF: %v", err)
 	}
 	defer program.Close()
 
-	// Initialize rule store — loads cached rules from disk if available
 	store := config.NewRuleStore()
-
-	// Try to fetch rules from server on startup — max 4 attempts
-	// If all fail, falls back to cached rules
 	connectToServer(cfg, store)
 
-	// Start listening for rule updates and deletions from server via NATS
 	listener := config.NewListener(
 		func(rule models.PolicyRule) {
 			store.Upsert(rule)
@@ -55,14 +52,12 @@ func main() {
 		log.Fatal("Failed to start policy listener:", err)
 	}
 
-	// Start metrics reporter
 	rep := reporter.New(cfg.AgentID, &serverAvailable)
 	rep.Start()
 
-	// Track previous counts to calculate req/s delta
+	// Track previous counts to calculate req/s delta between ticks.
 	prevCounts := make(map[string]uint64)
 
-	// Main loop — read eBPF stats and apply policies every 10 seconds
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		for range ticker.C {
@@ -73,7 +68,6 @@ func main() {
 			}
 
 			for ipStr, count := range stats {
-				// Calculate req/s from difference since last check
 				prev := prevCounts[ipStr]
 				diff := count - prev
 				prevCounts[ipStr] = count
@@ -110,7 +104,6 @@ func main() {
 					}
 				}
 
-				// Send stats to reporter
 				rep.AddStat(models.ClientStats{
 					IP:        ipStr,
 					ReqPerSec: reqPerSec,
@@ -121,12 +114,10 @@ func main() {
 		}
 	}()
 
-	// Start server health monitor in background
 	go watchServer(cfg, store)
 
 	log.Println("Agent running — monitoring network traffic and applying policies...")
 
-	// Wait for shutdown signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -140,8 +131,7 @@ func connectToServer(cfg *config.Config, store *config.RuleStore) {
 	for attempt := 1; attempt <= 4; attempt++ {
 		rules, err := config.FetchRules(cfg.ServerURL, cfg.Env)
 		if err == nil {
-			// Filter rules by env tag
-            filtered := filterRules(rules, cfg.Env)
+			filtered := filterRules(rules, cfg.Env)
 			for _, rule := range filtered {
 				store.UpsertSilent(rule)
 			}
@@ -158,7 +148,6 @@ func connectToServer(cfg *config.Config, store *config.RuleStore) {
 		}
 	}
 
-	// All attempts failed — use cached rules
 	log.Println("Could not reach server after 4 attempts — using cached rules")
 	store.LoadFromDisk()
 	serverAvailable = false
@@ -168,7 +157,6 @@ func connectToServer(cfg *config.Config, store *config.RuleStore) {
 // If server goes down, it logs and continues with current rules.
 // When server comes back, it fetches fresh rules and discards cache.
 func watchServer(cfg *config.Config, store *config.RuleStore) {
-	// Wait for connectToServer to finish first
 	time.Sleep(30 * time.Second)
 
 	ticker := time.NewTicker(15 * time.Second)
@@ -176,7 +164,6 @@ func watchServer(cfg *config.Config, store *config.RuleStore) {
 		rules, err := config.FetchRules(cfg.ServerURL, cfg.Env)
 		if err != nil {
 			if serverAvailable {
-				// Server just went down
 				log.Printf("Server is down: %v — continuing with current rules\n", err)
 				serverAvailable = false
 			} else {
@@ -186,10 +173,7 @@ func watchServer(cfg *config.Config, store *config.RuleStore) {
 		}
 
 		if !serverAvailable {
-			// Filter rules by env tag
-            filtered := filterRules(rules, cfg.Env)
-			
-			// Server came back — fetch fresh rules and discard cache
+			filtered := filterRules(rules, cfg.Env)
 			log.Println("Server is back — loading fresh rules")
 			store.Clear()
 			for _, rule := range filtered {
@@ -203,17 +187,15 @@ func watchServer(cfg *config.Config, store *config.RuleStore) {
 
 // filterRules returns only rules that belong to this agent (matching env or no tag)
 func filterRules(rules []models.PolicyRule, env string) []models.PolicyRule {
-    var filtered []models.PolicyRule
-    for _, rule := range rules {
-        // Accept rules with no tag (global) or matching env tag
-        if rule.Tag == "" || rule.Tag == env {
+	var filtered []models.PolicyRule
+	for _, rule := range rules {
+		if rule.Tag == "" || rule.Tag == env {
             filtered = append(filtered, rule)
         }
     }
     return filtered
 }
 
-// boolToInt converts a boolean to an integer (1 for true, 0 for false)
 func boolToInt(b bool) int {
 	if b {
 		return 1

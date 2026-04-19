@@ -13,17 +13,20 @@ const rulesFile = "/tmp/ebpf-policy-rules.json"
 
 // RuleStore keeps all active policy rules in memory
 type RuleStore struct {
-	mu sync.RWMutex
-	rules map[int]models.PolicyRule  // key: rule ID
+	mu    sync.RWMutex
+	rules map[int]models.PolicyRule
 }
 
+// NewRuleStore returns an empty, ready-to-use RuleStore.
 func NewRuleStore() *RuleStore {
 	s := &RuleStore{
-        rules: make(map[int]models.PolicyRule),
-    }
-    return s
+		rules: make(map[int]models.PolicyRule),
+	}
+	return s
 }
 
+// Upsert adds or replaces rule in the store and persists the store to disk.
+// It logs the operation, making it suitable for live rule updates.
 func (s *RuleStore) Upsert(rule models.PolicyRule) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -41,6 +44,8 @@ func (s *RuleStore) UpsertSilent(rule models.PolicyRule) {
     s.saveToDisk()
 }
 
+// Delete removes the rule with the given ID from the store.
+// It logs a warning if no rule with that ID exists.
 func (s *RuleStore) Delete(id int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -56,6 +61,7 @@ func (s *RuleStore) Delete(id int) {
 	s.saveToDisk()
 }
 
+// GetAll returns a snapshot of all rules currently in the store.
 func (s *RuleStore) GetAll() []models.PolicyRule {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -78,7 +84,7 @@ func (s *RuleStore) Match(reqPerSec int) *models.PolicyRule {
 		rule := rule // avoid closure capture
 
 		if reqPerSec <= rule.Threshold {
-			continue // does not match
+			continue
 		}
 		if bestRule == nil {
 			bestRule = &rule

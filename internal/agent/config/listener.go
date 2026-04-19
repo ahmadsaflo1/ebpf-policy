@@ -3,18 +3,27 @@ package config
 import (
 	"encoding/json"
 	"log"
+
 	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
 )
 
+// RuleHandler is called whenever a policy rule is created or updated.
 type RuleHandler func(rule models.PolicyRule)
+
+// DeleteHandler is called whenever a policy rule is deleted.
+// The argument is the ID of the deleted rule.
 type DeleteHandler func(ruleID int)
 
+// Listener subscribes to NATS topics and dispatches incoming rule changes
+// to the provided RuleHandler and DeleteHandler callbacks.
 type Listener struct {
 	onUpdate RuleHandler
 	onDelete DeleteHandler
 }
 
+// NewListener constructs a Listener that will call onUpdate for create/update
+// events and onDelete for delete events.
 func NewListener(onUpdate RuleHandler, onDelete DeleteHandler) *Listener {
 	return &Listener{
 		onUpdate: onUpdate,
@@ -24,14 +33,12 @@ func NewListener(onUpdate RuleHandler, onDelete DeleteHandler) *Listener {
 
 // Start listening for policy updates and deletions. If env is specified, also listen for updates specific to that env (e.g. "production").
 func (l *Listener) Start(env string) error {
-	// Build list of topics to subscribe to
-    topics := []string{"policy.update"}
-    if env != "" {
-        topics = append(topics, "policy.update."+env)
-    }
+	topics := []string{"policy.update"}
+	if env != "" {
+		topics = append(topics, "policy.update."+env)
+	}
 
-    // Subscribe to all topics using the same handler
-    for _, topic := range topics {
+	for _, topic := range topics {
         t := topic // avoid closure capture issue
         err := messaging.Subscribe(t, func(data []byte) {
             var rule models.PolicyRule
@@ -46,8 +53,7 @@ func (l *Listener) Start(env string) error {
         }
     }
 
-    // Subscribe to delete topics — global and env-specific
-    deleteTopics := []string{"policy.delete"}
+	deleteTopics := []string{"policy.delete"}
     if env != "" {
         deleteTopics = append(deleteTopics, "policy.delete."+env)
     }

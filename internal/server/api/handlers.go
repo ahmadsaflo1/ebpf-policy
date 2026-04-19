@@ -1,3 +1,5 @@
+// Package api implements the HTTP handlers for the policy server's REST API.
+// Routes are registered in cmd/server/main.go under the /api/rules prefix.
 package api
 
 import (
@@ -11,22 +13,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GET /api/rules — get all rules
+// GetRules handles GET /api/rules.
+// Accepts an optional ?env= query parameter; when supplied, only rules whose
+// tag matches env or whose tag is empty (global) are returned.
 func GetRules(c *gin.Context) {
-    env := c.Query("env")  // t.ex. ?env=production
+    env := c.Query("env")
 
     var rows *sql.Rows
     var err error
 
     if env != "" {
-        // Return only rules matching env tag or global rules (no tag)
         rows, err = db.DB.Query(`
             SELECT id, name, threshold, action, duration, tag, created_at
             FROM policy_rules
             WHERE tag = ? OR tag = ''
             ORDER BY created_at DESC`, env)
     } else {
-        // Return all rules
         rows, err = db.DB.Query(`
             SELECT id, name, threshold, action, duration, tag, created_at
             FROM policy_rules
@@ -53,7 +55,8 @@ func GetRules(c *gin.Context) {
     c.JSON(http.StatusOK, rules)
 }
 
-// POST /api/rules — create new rule
+// CreateRule handles POST /api/rules.
+// Persists the new rule and publishes an update event to NATS.
 func CreateRule(c *gin.Context) {
     var rule models.PolicyRule
     if err := c.ShouldBindJSON(&rule); err != nil {
@@ -72,15 +75,15 @@ func CreateRule(c *gin.Context) {
     }
 
     id, _ := result.LastInsertId()
-    rule.ID = int(id)
+	rule.ID = int(id)
 
-	// Publish to NATS so the agent knows about the new rule
 	policy.PublishUpdate(rule)
 
     c.JSON(http.StatusCreated, rule)
 }
 
-// GET /api/rules/:id — get a specific rule
+// GetRule handles GET /api/rules/:id.
+// Returns 404 if no rule with the given ID exists.
 func GetRule(c *gin.Context) {
     id := c.Param("id")
     var rule models.PolicyRule
@@ -103,7 +106,9 @@ func GetRule(c *gin.Context) {
     c.JSON(http.StatusOK, rule)
 }
 
-// PUT /api/rules/:id — update a specific rule
+// UpdateRule handles PUT /api/rules/:id.
+// Updates the rule in the database and publishes the change to NATS.
+// Returns 404 if no rule with the given ID exists.
 func UpdateRule(c *gin.Context) {
     id := c.Param("id")
     var rule models.PolicyRule
@@ -123,14 +128,12 @@ func UpdateRule(c *gin.Context) {
         return
     }
 
-	// Check how many rows were actually deleted
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
 		return
 	}
 
-	// Publish to NATS so the agent knows about the updated rule
 	ruleID, _ := strconv.Atoi(id)
 	rule.ID = ruleID
 	policy.PublishUpdate(rule)
@@ -138,12 +141,13 @@ func UpdateRule(c *gin.Context) {
     c.JSON(http.StatusOK, gin.H{"message": "rule updated"})
 }
 
-// DELETE /api/rules/:id — delete a specific rule
+// DeleteRule handles DELETE /api/rules/:id.
+// The rule is fetched before deletion so its tag can be included in the NATS
+// delete event, ensuring only relevant agents are notified.
 func DeleteRule(c *gin.Context) {
-id := c.Param("id")
+	id := c.Param("id")
 
-    // Fetch rule before deleting to get name and tag for publishing
-    var rule models.PolicyRule
+	var rule models.PolicyRule
     err := db.DB.QueryRow(`
         SELECT id, name, threshold, action, duration, tag, created_at
         FROM policy_rules WHERE id = ?`, id,
@@ -159,7 +163,6 @@ id := c.Param("id")
         return
     }
 
-    // Delete from database
     result, err := db.DB.Exec("DELETE FROM policy_rules WHERE id = ?", id)
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -172,7 +175,6 @@ id := c.Param("id")
         return
     }
 
-    // Publish delete to relevant agents
     policy.PublishDelete(rule)
 
     c.JSON(http.StatusOK, gin.H{"message": "rule deleted"})

@@ -1,13 +1,19 @@
+// Package db manages the SQLite database connection and schema for the policy
+// server.
 package db
 
 import (
 	"database/sql"
 	"log"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// DB is the shared database connection used by HTTP handlers.
 var DB *sql.DB
 
+// Init opens (or creates) the SQLite database file and ensures the required
+// tables exist. Calls log.Fatal on any error.
 func Init() {
     var err error
     DB, err = sql.Open("sqlite3", "./policy.db")
@@ -23,6 +29,8 @@ func Init() {
     log.Println("Database connected!")
 }
 
+// createTables creates the policy_rules and client_stats tables if they do
+// not already exist.
 func createTables() error {
     _, err := DB.Exec(`
     CREATE TABLE IF NOT EXISTS policy_rules (

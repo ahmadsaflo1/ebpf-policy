@@ -1,3 +1,6 @@
+// Package ebpf loads the compiled eBPF/XDP policy program onto a network
+// interface and exposes helpers for managing the block list, rate-limit state,
+// and per-IP request counters maintained by the kernel program.
 package ebpf
 
 import (
@@ -11,9 +14,11 @@ import (
     "github.com/cilium/ebpf/link"
 )
 
+// PolicyProgram wraps the loaded eBPF objects and the XDP link attached to
+// the network interface. Use Load to create one; call Close when done.
 type PolicyProgram struct {
-    objs PolicyObjects
-    xdp  link.Link
+	objs PolicyObjects
+	xdp  link.Link
 }
 
 // RateLimitState holds the token bucket state for an IP
@@ -35,11 +40,10 @@ func Load(iface string) (*PolicyProgram, error) {
         return nil, fmt.Errorf("Failed to get interface by name %s: %w", iface, err)
     }
 
-    // Attach the eBPF program to the specified network interface using XDP with SKB mode for better compatibility across different environments
     p.xdp, err = link.AttachXDP(link.XDPOptions{
         Program:   p.objs.PolicyFilter,
         Interface: ifaceObj.Index,
-        Flags:     link.XDPGenericMode, // Use generic mode for compatibility
+        Flags:     link.XDPGenericMode, // generic mode for broader driver compatibility
     })
     if err != nil {
         return nil, fmt.Errorf("Failed to attach XDP program: %w", err)
@@ -79,17 +83,14 @@ func(p *PolicyProgram) IsBlocked(ip net.IP) bool {
     var blockedUntil uint64
     err := p.objs.BlockList.Lookup(key, &blockedUntil)
     if err != nil {
-        // IP not found in block list
         return false
     }
 
-    // Get current kernel time
     ktimeNs, err := getKtimeNs()
     if err != nil {
         return false
     }
 
-    // IP is blocked if current time is before blockedUntil
     return ktimeNs < blockedUntil
 }
 
@@ -150,15 +151,16 @@ func getKtimeNs() (uint64, error) {
     return uint64(uptime * 1e9), nil
 }
 
-// Helper functions to convert between net.IP and uint32 for map keys
+// ipToUint32 converts a net.IP to a big-endian uint32 suitable for use as an
+// eBPF map key.
 func ipToUint32(ip net.IP) uint32 {
-    ip = ip.To4()
-    return binary.BigEndian.Uint32(ip)
+	ip = ip.To4()
+	return binary.BigEndian.Uint32(ip)
 }
 
-// Convert uint32 back to net.IP
+// uint32ToIP converts a big-endian uint32 eBPF map key back to a net.IP.
 func uint32ToIP(n uint32) net.IP {
-    ip := make(net.IP, 4)
-    binary.BigEndian.PutUint32(ip, n)
-    return ip
+	ip := make(net.IP, 4)
+	binary.BigEndian.PutUint32(ip, n)
+	return ip
 }

@@ -1,3 +1,5 @@
+// Package policy publishes rule lifecycle events (create/update/delete) to
+// NATS so that enforcement agents receive changes in real time.
 package policy
 
 import (
@@ -12,7 +14,9 @@ const (
 	TopicPolicyDelete  = "policy.delete"
 )
 
-// Publish that a rule has been created or updated
+// PublishUpdate serialises rule and publishes it to the appropriate NATS topic.
+// Tagged rules are published to "policy.update.<tag>"; untagged rules go to
+// "policy.update" so all agents receive them.
 func PublishUpdate(rule models.PolicyRule) {
 	data, err := json.Marshal(rule)
 	if err != nil {
@@ -20,7 +24,6 @@ func PublishUpdate(rule models.PolicyRule) {
 		return
 	}
 
-	// If the rule has a tag, publish to a specific topic for that tag
 	topic := TopicPolicyUpdates
     if rule.Tag != "" {
         topic = TopicPolicyUpdates + "." + rule.Tag
@@ -35,7 +38,8 @@ func PublishUpdate(rule models.PolicyRule) {
     log.Printf("Published policy update: %s (topic: %s)\n", rule.Name, topic)
 }
 
-// Publish that a rule has been removed
+// PublishDelete publishes the ID of the deleted rule to "policy.delete" (or
+// "policy.delete.<tag>" for tagged rules) so agents can remove it locally.
 func PublishDelete(rule models.PolicyRule) {
 	data, err := json.Marshal(map[string]int{"id": rule.ID})
 	if err != nil {
