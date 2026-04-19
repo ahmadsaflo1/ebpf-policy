@@ -135,7 +135,7 @@ func main() {
 // If server is unreachable after 4 attempts, falls back to cached rules.
 func connectToServer(cfg *config.Config, store *config.RuleStore) {
 	for attempt := 1; attempt <= 4; attempt++ {
-		rules, err := config.FetchRules(cfg.ServerURL)
+		rules, err := config.FetchRules(cfg.ServerURL, cfg.Env)
 		if err == nil {
 			// Filter rules by env tag
             filtered := filterRules(rules, cfg.Env)
@@ -146,8 +146,7 @@ func connectToServer(cfg *config.Config, store *config.RuleStore) {
 			for _, rule := range filtered {
 				store.Upsert(rule)
 			}
-			log.Printf("Fetched %d rules (%d relevant for env '%s')\n",
-                len(rules), len(filtered), cfg.Env)
+			log.Printf("Fetched %d rules from server\n", len(filtered))
 			return
 		}
 
@@ -174,7 +173,7 @@ func watchServer(cfg *config.Config, store *config.RuleStore) {
 
 	ticker := time.NewTicker(15 * time.Second)
 	for range ticker.C {
-		rules, err := config.FetchRules(cfg.ServerURL)
+		rules, err := config.FetchRules(cfg.ServerURL, cfg.Env)
 		if err != nil {
 			if !serverWasDown {
 				// Server just went down
@@ -196,8 +195,7 @@ func watchServer(cfg *config.Config, store *config.RuleStore) {
 			for _, rule := range filtered {
 				store.Upsert(rule)
 			}
-			log.Printf("Fetched %d rules (%d relevant for env '%s') from server\n",
-                len(rules), len(filtered), cfg.Env)
+			log.Printf("Fetched %d rules from server\n",len(filtered))
 			serverWasDown = false
 		}
 	}

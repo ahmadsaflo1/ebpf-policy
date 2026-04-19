@@ -13,11 +13,26 @@ import (
 
 // GET /api/rules — get all rules
 func GetRules(c *gin.Context) {
-    rows, err := db.DB.Query(`
-        SELECT id, name, threshold, action, duration, tag, created_at
-        FROM policy_rules
-        ORDER BY created_at DESC
-    `)
+    env := c.Query("env")  // t.ex. ?env=production
+
+    var rows *sql.Rows
+    var err error
+
+    if env != "" {
+        // Return only rules matching env tag or global rules (no tag)
+        rows, err = db.DB.Query(`
+            SELECT id, name, threshold, action, duration, tag, created_at
+            FROM policy_rules
+            WHERE tag = ? OR tag = ''
+            ORDER BY created_at DESC`, env)
+    } else {
+        // Return all rules
+        rows, err = db.DB.Query(`
+            SELECT id, name, threshold, action, duration, tag, created_at
+            FROM policy_rules
+            ORDER BY created_at DESC`)
+    }
+    
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
