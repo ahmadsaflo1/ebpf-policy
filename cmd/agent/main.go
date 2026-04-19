@@ -137,13 +137,17 @@ func connectToServer(cfg *config.Config, store *config.RuleStore) {
 	for attempt := 1; attempt <= 4; attempt++ {
 		rules, err := config.FetchRules(cfg.ServerURL)
 		if err == nil {
+			// Filter rules by env tag
+            filtered := filterRules(rules, cfg.Env)
+
 			// Server reachable — clear cache and load fresh rules
 			log.Println("Connected to server — loading fresh rules")
 			store.Clear()
-			for _, rule := range rules {
+			for _, rule := range filtered {
 				store.Upsert(rule)
 			}
-			log.Printf("Fetched %d fresh rules from server\n", len(rules))
+			log.Printf("Fetched %d rules (%d relevant for env '%s')\n",
+                len(rules), len(filtered), cfg.Env)
 			return
 		}
 
@@ -183,16 +187,32 @@ func watchServer(cfg *config.Config, store *config.RuleStore) {
 		}
 
 		if serverWasDown {
+			// Filter rules by env tag
+            filtered := filterRules(rules, cfg.Env)
+			
 			// Server came back — fetch fresh rules and discard cache
 			log.Println("Server is back — loading fresh rules")
 			store.Clear()
-			for _, rule := range rules {
+			for _, rule := range filtered {
 				store.Upsert(rule)
 			}
-			log.Printf("Fetched %d fresh rules from server\n", len(rules))
+			log.Printf("Fetched %d rules (%d relevant for env '%s') from server\n",
+                len(rules), len(filtered), cfg.Env)
 			serverWasDown = false
 		}
 	}
+}
+
+// filterRules returns only rules that belong to this agent (matching env or no tag)
+func filterRules(rules []models.PolicyRule, env string) []models.PolicyRule {
+    var filtered []models.PolicyRule
+    for _, rule := range rules {
+        // Accept rules with no tag (global) or matching env tag
+        if rule.Tag == "" || rule.Tag == env {
+            filtered = append(filtered, rule)
+        }
+    }
+    return filtered
 }
 
 // boolToInt converts a boolean to an integer (1 for true, 0 for false)
