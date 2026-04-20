@@ -42,6 +42,13 @@ func main() {
 		rules.DELETE("/:id", api.DeleteRule)
 	}
 
+	metricsAPI := r.Group("/api/metrics")
+	{
+		metricsAPI.GET("/search", api.SearchClients)        // Search client stats
+		metricsAPI.GET("/aggregated", api.GetAggregatedMetrics) // Aggregated stats per IP
+		metricsAPI.GET("/top", api.GetTopClients)           // Top N clients
+	}
+
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: r,
