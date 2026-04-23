@@ -16,6 +16,7 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/agent/config"
 	ebpfloader "github.com/ahmadsaflo1/ebpf-policy/internal/agent/ebpf"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/agent/reporter"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/agent/system"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
 )
@@ -54,6 +55,12 @@ func main() {
 
 	rep := reporter.New(cfg.AgentID, &serverAvailable)
 	rep.Start()
+
+	sysReporter := system.NewReporter(cfg.AgentID, &serverAvailable)
+	sysMonitor := system.New(cfg.AgentID, 30*time.Second, func(metrics models.SystemMetrics) {
+		sysReporter.Report(metrics)
+	})
+	sysMonitor.Start()
 
 	// Track previous counts to calculate req/s delta between ticks.
 	prevCounts := make(map[string]uint64)

@@ -57,5 +57,21 @@ func createTables() error {
         recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`)
 
+    _, err = DB.Exec(`
+    CREATE TABLE IF NOT EXISTS system_metrics (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id         TEXT    NOT NULL,
+        cpu_percent      REAL    NOT NULL,
+        memory_percent   REAL    NOT NULL,
+        memory_used_mb   INTEGER NOT NULL,
+        memory_total_mb  INTEGER NOT NULL,
+        disk_used_gb     INTEGER NOT NULL,
+        disk_total_gb    INTEGER NOT NULL,
+        disk_percent     REAL    NOT NULL,
+        net_bytes_sent   INTEGER NOT NULL,
+        net_bytes_recv   INTEGER NOT NULL,
+        recorded_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+
     return err
 }
