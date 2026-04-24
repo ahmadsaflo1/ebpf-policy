@@ -38,9 +38,19 @@ func StartCollector(){
 // saveClientStats inserts a single per-IP stat row into the client_stats table.
 func saveClientStats(agentID string, stat models.ClientStats) {
 	_, err := db.DB.Exec(`
-		INSERT INTO client_stats (agent_id, ip, req_per_sec, blocked, passed, recorded_at)
-		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		agentID, stat.IP, stat.ReqPerSec, stat.Blocked, stat.Passed,
+		INSERT INTO client_stats (
+			agent_id, ip, req_per_sec, blocked, passed,
+			avg_latency_us, min_latency_us, max_latency_us,
+			recorded_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		agentID, 
+		stat.IP, 
+		stat.ReqPerSec, 
+		stat.Blocked, 
+		stat.Passed,
+		stat.AvgLatencyUs,
+		stat.MinLatencyUs,
+		stat.MaxLatencyUs,
 	)
 
 	if err != nil {

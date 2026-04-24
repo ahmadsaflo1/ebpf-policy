@@ -30,7 +30,16 @@ func SearchClients(c *gin.Context) {
 	offset := c.DefaultQuery("offset", "0")
 
 	query := `
-		SELECT agent_id, ip, req_per_sec, blocked, passed, recorded_at
+		SELECT 
+			agent_id, 
+			ip, 
+			req_per_sec, 
+			blocked, 
+			passed,
+			avg_latency_us,
+			min_latency_us,
+			max_latency_us,
+			recorded_at
 		FROM client_stats
 		WHERE (? = '' OR ip LIKE ?)
 		  AND (? = '' OR agent_id = ?)
@@ -51,19 +60,24 @@ func SearchClients(c *gin.Context) {
 	for rows.Next() {
 		var agentID, ipAddr string
 		var reqPerSec, blocked, passed int
+		var avgLatency, minLatency, maxLatency float64
 		var recordedAt time.Time
 
-		if err := rows.Scan(&agentID, &ipAddr, &reqPerSec, &blocked, &passed, &recordedAt); err != nil {
+		if err := rows.Scan(&agentID, &ipAddr, &reqPerSec, &blocked, &passed,
+			&avgLatency, &minLatency, &maxLatency, &recordedAt); err != nil {
 			continue
 		}
 
 		results = append(results, map[string]interface{}{
-			"agent_id":    agentID,
-			"ip":          ipAddr,
-			"req_per_sec": reqPerSec,
-			"blocked":     blocked,
-			"passed":      passed,
-			"recorded_at": recordedAt,
+			"agent_id":       agentID,
+			"ip":             ipAddr,
+			"req_per_sec":    reqPerSec,
+			"blocked":        blocked,
+			"passed":         passed,
+			"avg_latency_us": avgLatency,
+			"min_latency_us": minLatency,
+			"max_latency_us": maxLatency,
+			"recorded_at":    recordedAt,
 		})
 	}
 
@@ -100,6 +114,9 @@ func GetAggregatedMetrics(c *gin.Context) {
 			MIN(req_per_sec) as min_req_per_sec,
 			SUM(blocked) as total_blocked,
 			SUM(passed) as total_passed,
+			AVG(avg_latency_us) as avg_latency,
+			MIN(min_latency_us) as min_latency,
+			MAX(max_latency_us) as max_latency,
 			MIN(recorded_at) as first_seen,
 			MAX(recorded_at) as last_seen
 		FROM client_stats
@@ -112,7 +129,8 @@ func GetAggregatedMetrics(c *gin.Context) {
 	var avgReqPerSec float64
 	var maxReqPerSec, minReqPerSec int
 	var totalBlocked, totalPassed int
-	var firstSeenStr, lastSeenStr string  // ✅ Ändrat till string
+	var avgLatency, minLatency, maxLatency float64
+	var firstSeenStr, lastSeenStr string
 
 	err = db.DB.QueryRow(query, ip, duration).Scan(
 		&resultIP,
@@ -122,8 +140,11 @@ func GetAggregatedMetrics(c *gin.Context) {
 		&minReqPerSec,
 		&totalBlocked,
 		&totalPassed,
-		&firstSeenStr, 
-		&lastSeenStr,   
+		&avgLatency,
+		&minLatency,
+		&maxLatency,
+		&firstSeenStr,
+		&lastSeenStr,
 	)
 
 	if err != nil {
@@ -133,7 +154,7 @@ func GetAggregatedMetrics(c *gin.Context) {
 		return
 	}
 
-	// ✅ Parse timestamps från strings
+	// Parse timestamps från strings
 	firstSeen, _ := time.Parse("2006-01-02 15:04:05", firstSeenStr)
 	lastSeen, _ := time.Parse("2006-01-02 15:04:05", lastSeenStr)
 
@@ -146,6 +167,9 @@ func GetAggregatedMetrics(c *gin.Context) {
 		"min_req_per_sec": minReqPerSec,
 		"total_blocked":   totalBlocked,
 		"total_passed":    totalPassed,
+		"avg_latency_us":  avgLatency,
+		"min_latency_us":  minLatency,
+		"max_latency_us":  maxLatency,
 		"first_seen":      firstSeen,
 		"last_seen":       lastSeen,
 	})

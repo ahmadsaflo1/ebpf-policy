@@ -12,8 +12,11 @@ type MetricsReport struct {
 
 // ClientStats holds per-IP traffic counters for a single reporting window.
 type ClientStats struct {
-	IP        string `json:"ip"`
-	ReqPerSec int    `json:"req_per_sec"`
-	Blocked   int    `json:"blocked"` // 1 if currently blocked, 0 otherwise
-	Passed    int    `json:"passed"`  // total packets allowed through
+	IP           string  `json:"ip"`
+	ReqPerSec    int     `json:"req_per_sec"`
+	Blocked      int     `json:"blocked"` // 1 if currently blocked, 0 otherwise
+	Passed       int     `json:"passed"`  // total packets allowed through
+	AvgLatencyUs float64 `json:"avg_latency_us,omitempty"` 
+	MinLatencyUs float64 `json:"min_latency_us,omitempty"` 
+	MaxLatencyUs float64 `json:"max_latency_us,omitempty"`
 }

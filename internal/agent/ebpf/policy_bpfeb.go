@@ -19,6 +19,14 @@ type PolicyIpStats struct {
 	LastSeen uint64
 }
 
+type PolicyLatencyStats struct {
+	_              structs.HostLayout
+	TotalLatencyNs uint64
+	PacketCount    uint64
+	MinLatencyNs   uint64
+	MaxLatencyNs   uint64
+}
+
 type PolicyRateLimitState struct {
 	_          structs.HostLayout
 	Tokens     uint64
@@ -75,6 +83,7 @@ type PolicyProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type PolicyMapSpecs struct {
 	BlockList    *ebpf.MapSpec `ebpf:"block_list"`
+	LatencyMap   *ebpf.MapSpec `ebpf:"latency_map"`
 	RateLimitMap *ebpf.MapSpec `ebpf:"rate_limit_map"`
 	RequestCount *ebpf.MapSpec `ebpf:"request_count"`
 }
@@ -106,6 +115,7 @@ func (o *PolicyObjects) Close() error {
 // It can be passed to LoadPolicyObjects or ebpf.CollectionSpec.LoadAndAssign.
 type PolicyMaps struct {
 	BlockList    *ebpf.Map `ebpf:"block_list"`
+	LatencyMap   *ebpf.Map `ebpf:"latency_map"`
 	RateLimitMap *ebpf.Map `ebpf:"rate_limit_map"`
 	RequestCount *ebpf.Map `ebpf:"request_count"`
 }
@@ -113,6 +123,7 @@ type PolicyMaps struct {
 func (m *PolicyMaps) Close() error {
 	return _PolicyClose(
 		m.BlockList,
+		m.LatencyMap,
 		m.RateLimitMap,
 		m.RequestCount,
 	)

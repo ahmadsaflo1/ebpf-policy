@@ -48,13 +48,16 @@ func createTables() error {
 
     _, err = DB.Exec(`
     CREATE TABLE IF NOT EXISTS client_stats (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        agent_id    TEXT    NOT NULL,
-        ip          TEXT    NOT NULL,
-        req_per_sec INTEGER NOT NULL,
-        blocked     INTEGER NOT NULL,
-        passed      INTEGER NOT NULL,
-        recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id       TEXT    NOT NULL,
+        ip             TEXT    NOT NULL,
+        req_per_sec    INTEGER NOT NULL,
+        blocked        INTEGER NOT NULL,
+        passed         INTEGER NOT NULL,
+        avg_latency_us REAL DEFAULT 0,
+        min_latency_us REAL DEFAULT 0,
+        max_latency_us REAL DEFAULT 0,
+        recorded_at    DATETIME DEFAULT CURRENT_TIMESTAMP
     )`)
 
     _, err = DB.Exec(`

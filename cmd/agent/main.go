@@ -74,6 +74,12 @@ func main() {
 				continue
 			}
 
+			latencyStats, err := program.GetAllLatencyStats()
+			if err != nil {
+				log.Println("Failed to read latency stats:", err)
+				latencyStats = make(map[string]*ebpfloader.LatencyStats)
+			}
+
 			for ipStr, count := range stats {
 				prev := prevCounts[ipStr]
 				diff := count - prev
@@ -111,12 +117,21 @@ func main() {
 					}
 				}
 
-				rep.AddStat(models.ClientStats{
+				clientStat := models.ClientStats{
 					IP:        ipStr,
 					ReqPerSec: reqPerSec,
 					Blocked:   boolToInt(isBlocked),
 					Passed:    int(diff),
-				})
+				}
+
+				// Add latency metrics if available
+				if latency, ok := latencyStats[ipStr]; ok && latency != nil {
+					clientStat.AvgLatencyUs = latency.GetAvgLatencyUs()
+					clientStat.MinLatencyUs = latency.GetMinLatencyUs()
+					clientStat.MaxLatencyUs = latency.GetMaxLatencyUs()
+				}
+
+				rep.AddStat(clientStat)
 			}
 		}
 	}()
