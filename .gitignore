@@ -6,6 +6,10 @@
 *.o
 *.a
 
+# Generated eBPF Go bindings
+internal/agent/ebpf/policy_bpf*.go
+internal/agent/ebpf/policy_bpf*.o
+
 # SQLite database
 *.db
 
