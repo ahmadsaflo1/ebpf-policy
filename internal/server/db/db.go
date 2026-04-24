@@ -5,16 +5,27 @@ package db
 import (
 	"database/sql"
 	"log"
-
-	_ "github.com/mattn/go-sqlite3"
+    "os"
 )
 
 // DB is the shared database connection used by HTTP handlers.
 var DB *sql.DB
 
+// Init initializes database connection (SQLite or TimescaleDB based on env)
+func Init() {
+	// Check if USE_TIMESCALE env variable is set
+	if os.Getenv("USE_TIMESCALE") == "true" {
+		log.Println("🐘 Using TimescaleDB (PostgreSQL)")
+		InitTimescale()
+	} else {
+		log.Println("📦 Using SQLite (default)")
+		InitSQLite()
+	}
+}
+
 // Init opens (or creates) the SQLite database file and ensures the required
 // tables exist. Calls log.Fatal on any error.
-func Init() {
+func InitSQLite() {
     var err error
     DB, err = sql.Open("sqlite3", "./policy.db")
     if err != nil {

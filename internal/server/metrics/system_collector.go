@@ -3,6 +3,7 @@ package metrics
 import (
 	"encoding/json"
 	"log"
+	"os"
 
 	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
@@ -36,24 +37,47 @@ func StartSystemCollector() {
 
 // saveSystemMetrics inserts system performance data into the database
 func saveSystemMetrics(agentID string, metrics models.SystemMetrics) {
-	_, err := db.DB.Exec(`
-		INSERT INTO system_metrics (
-			agent_id, cpu_percent, memory_percent, memory_used_mb, memory_total_mb,
-			disk_used_gb, disk_total_gb, disk_percent, net_bytes_sent, net_bytes_recv
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		agentID,
-		metrics.CPUPercent,
-		metrics.MemoryPercent,
-		metrics.MemoryUsedMB,
-		metrics.MemoryTotalMB,
-		metrics.DiskUsedGB,
-		metrics.DiskTotalGB,
-		metrics.DiskPercent,
-		metrics.NetBytesSent,
-		metrics.NetBytesRecv,
-	)
-
-	if err != nil {
-		log.Printf("Failed to save system metrics for agent %s: %v", agentID, err)
+	if os.Getenv("USE_TIMESCALE") == "true" {
+		// TimescaleDB
+		_, err := db.DB.Exec(`
+			INSERT INTO system_metrics (
+				time, agent_id, cpu_percent, memory_percent, memory_used_mb, memory_total_mb,
+				disk_used_gb, disk_total_gb, disk_percent, net_bytes_sent, net_bytes_recv
+			) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			agentID,
+			metrics.CPUPercent,
+			metrics.MemoryPercent,
+			metrics.MemoryUsedMB,
+			metrics.MemoryTotalMB,
+			metrics.DiskUsedGB,
+			metrics.DiskTotalGB,
+			metrics.DiskPercent,
+			metrics.NetBytesSent,
+			metrics.NetBytesRecv,
+		)
+		if err != nil {
+			log.Printf("Failed to save system metrics for agent %s: %v", agentID, err)
+		}
+	} else {
+		// SQLite (original)
+		_, err := db.DB.Exec(`
+			INSERT INTO system_metrics (
+				agent_id, cpu_percent, memory_percent, memory_used_mb, memory_total_mb,
+				disk_used_gb, disk_total_gb, disk_percent, net_bytes_sent, net_bytes_recv
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			agentID,
+			metrics.CPUPercent,
+			metrics.MemoryPercent,
+			metrics.MemoryUsedMB,
+			metrics.MemoryTotalMB,
+			metrics.DiskUsedGB,
+			metrics.DiskTotalGB,
+			metrics.DiskPercent,
+			metrics.NetBytesSent,
+			metrics.NetBytesRecv,
+		)
+		if err != nil {
+			log.Printf("Failed to save system metrics for agent %s: %v", agentID, err)
+		}
 	}
 }

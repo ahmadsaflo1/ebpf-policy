@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/cilium/ebpf v0.21.0
 	github.com/gin-gonic/gin v1.12.0
-	github.com/mattn/go-sqlite3 v1.14.41
+	github.com/lib/pq v1.12.3
 	github.com/shirou/gopsutil/v3 v3.24.5
 )
 
