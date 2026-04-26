@@ -13,6 +13,8 @@ services:
       - "5432:5432"
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
+    networks:
+      - ebpf-network
 
   nats:
     image: nats:latest
@@ -22,6 +24,32 @@ services:
       - "4222:4222"
       - "8222:8222"
     command: ["-js", "-m", "8222"]
+    networks:
+      - ebpf-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    depends_on:
+      - timescaledb
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - ebpf-network
 
 volumes:
   timescaledb-data:
+  grafana-data:
+
+networks:
+  ebpf-network:
+    driver: bridge
