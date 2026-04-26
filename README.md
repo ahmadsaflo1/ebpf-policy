@@ -19,6 +19,7 @@
 - [Manual Installation](#manual-installation)
 - [Running the System](#running-the-system)
 - [REST API](#rest-api)
+- [Grafana Dashboard](#grafana-dashboard)
 - [Database Schema](#database-schema)
 - [Technologies](#technologies)
 
@@ -356,8 +357,8 @@ sudo INTERFACE=<interface> \
 |----------------------|---------|-------------|
 | `INTERFACE` | `eth0` | Network interface to monitor (e.g. `ens5`) |
 | `AGENT_ID` | `agent-001` | Unique identifier for this agent instance |
-| `SERVER_URL` | `http://localhost:8080` | URL of the policy server |
-| `NATS_URL` | `nats://localhost:4222` | NATS broker address |
+| `SERVER_URL` | `http://<server-ip>:8080` | URL of the policy server |
+| `NATS_URL` | `nats://<server-ip>:4222` | NATS broker address |
 | `ENV` | *(empty — global)* | Environment tag for rule filtering |
 
 ---
@@ -395,7 +396,7 @@ Base URL: `http://<server>:8080`
 ### Example: Create a global block rule
 
 ```bash
-curl -X POST http://localhost:8080/api/rules \
+curl -X POST http://<server-ip>:8080/api/rules \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Block >500 req/s",
@@ -408,7 +409,7 @@ curl -X POST http://localhost:8080/api/rules \
 ### Example: Create an environment-specific rate-limit rule
 
 ```bash
-curl -X POST http://localhost:8080/api/rules \
+curl -X POST http://<server-ip>:8080/api/rules \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Rate-limit production at >200 req/s",
@@ -428,6 +429,54 @@ curl -X POST http://localhost:8080/api/rules \
 | `action` | `string` | `"block"` or `"ratelimit"` |
 | `duration` | `int` | Enforcement duration in seconds |
 | `tag` | `string` | *(optional)* Environment tag — empty = global |
+
+---
+
+## Grafana Dashboard
+
+Grafana ingår i Docker Compose-stacken och laddas automatiskt med en färdig dashboard.
+
+### Starta
+
+```bash
+docker compose up -d
+```
+
+### Öppna dashboarden
+
+Grafana körs på samma maskin som servern. Ersätt `<server-ip>` med serverns IP-adress:
+
+```
+http://<server-ip>:3000
+```
+
+Logga in med användare `admin` och lösenord `admin`, klicka sedan på **Dashboards → Browse** och välj **eBPF Policy Overview**.
+
+> Om du kör allt lokalt kan du använda `http://localhost:3000`.
+
+Dashboarden laddas automatiskt via provisioning från `grafana/dashboards/ebpf-policy-overview.json`. Inget manuellt steg krävs.
+
+### Felsökning
+
+Om dashboarden inte syns:
+
+```bash
+# Kontrollera att containrarna kör
+docker compose ps
+
+# Se loggar
+docker compose logs grafana
+
+# Starta om Grafana
+docker compose restart grafana
+```
+
+Om containrarna inte startar alls:
+
+```bash
+docker compose down -v
+docker compose up -d
+```
 
 ---
 
