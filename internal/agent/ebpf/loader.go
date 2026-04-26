@@ -21,12 +21,15 @@ type PolicyProgram struct {
 	xdp  link.Link
 }
 
-// RateLimitState holds the token bucket state for an IP
+// RateLimitState mirrors the kernel-space rate_limit_state struct stored in
+// the rate_limit_map BPF map.
 type RateLimitState struct {
     Tokens     uint64
     LastRefill uint64
 }
 
+// LatencyStats mirrors the kernel-space latency_stats struct stored in the
+// latency_map BPF map.
 type LatencyStats struct {
     TotalLatencyNs uint64
     PacketCount    uint64
@@ -196,7 +199,9 @@ func (stats *LatencyStats) GetMaxLatencyUs() float64 {
     return float64(stats.MaxLatencyNs) / 1000.0
 }
 
-// getKtimeNs retrieves the current kernel time in nanoseconds, which is used for timing the block duration in the eBPF program.
+// getKtimeNs returns the kernel monotonic time in nanoseconds by reading
+// /proc/uptime, matching the bpf_ktime_get_ns() clock used by the XDP program
+// to store block-expiry timestamps in block_list.
 func getKtimeNs() (uint64, error) {
     data, err := os.ReadFile("/proc/uptime")
     if err != nil {

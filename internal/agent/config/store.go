@@ -72,7 +72,10 @@ func (s *RuleStore) GetAll() []models.PolicyRule {
 	return rules
 }
 
-// Match finds the first rule that matches the given request rate.
+// Match returns the highest-priority rule whose threshold is exceeded by
+// reqPerSec. Priority: "block" beats "ratelimit"; among equal actions the
+// rule with the highest threshold (most specific) wins. Returns nil when no
+// rule threshold is exceeded.
 func (s *RuleStore) Match(reqPerSec int) *models.PolicyRule {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

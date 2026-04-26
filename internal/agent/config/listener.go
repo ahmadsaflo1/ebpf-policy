@@ -31,7 +31,10 @@ func NewListener(onUpdate RuleHandler, onDelete DeleteHandler) *Listener {
 	}
 }
 
-// Start listening for policy updates and deletions. If env is specified, also listen for updates specific to that env (e.g. "production").
+// Start subscribes to NATS policy topics and begins dispatching events.
+// It always subscribes to the global "policy.update" and "policy.delete"
+// topics; when env is non-empty it additionally subscribes to the
+// environment-scoped variants (e.g. "policy.update.production").
 func (l *Listener) Start(env string) error {
 	topics := []string{"policy.update"}
 	if env != "" {

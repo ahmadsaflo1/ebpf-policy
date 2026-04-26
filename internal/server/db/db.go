@@ -1,5 +1,7 @@
-// Package db manages the SQLite database connection and schema for the policy
-// server.
+// Package db manages the database connection and schema for the policy server.
+// It supports two backends: SQLite (default, file-based) and TimescaleDB
+// (PostgreSQL with time-series extensions). The backend is chosen at startup
+// based on the USE_TIMESCALE environment variable.
 package db
 
 import (

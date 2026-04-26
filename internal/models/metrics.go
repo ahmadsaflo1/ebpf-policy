@@ -1,3 +1,4 @@
+// Traffic metrics reported by agents to the server via NATS.
 package models
 
 import "time"

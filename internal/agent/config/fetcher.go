@@ -1,3 +1,5 @@
+// This file contains the HTTP client used to pull policy rules from the server
+// on agent startup and during server reconnects.
 package config
 
 import (
@@ -8,7 +10,9 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
 )
 
-// FetchRules fetches all rules from the policy server when the agent starts up.
+// FetchRules fetches policy rules from the server's /api/rules endpoint.
+// When env is non-empty it is passed as a query parameter so the server
+// returns only global rules plus rules tagged for that environment.
 func FetchRules(serverURL string, env string) ([]models.PolicyRule, error) {
 	url := fmt.Sprintf("%s/api/rules?env=%s", serverURL, env)
 

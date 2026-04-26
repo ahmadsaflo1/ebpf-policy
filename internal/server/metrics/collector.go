@@ -11,7 +11,8 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
 )
 
-// StartCollector initializes the metrics collector to listen for incoming metrics reports from agents and saves them to the database.
+// StartCollector subscribes to "metrics.report" on NATS and persists each
+// incoming MetricsReport's per-IP stats to the client_stats table.
 func StartCollector(){
 	err := messaging.Subscribe("metrics.report", func(data []byte) {
 		var report models.MetricsReport

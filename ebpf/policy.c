@@ -1,3 +1,17 @@
+/*
+ * policy_filter — XDP program for per-IP DDoS blocking and rate limiting.
+ *
+ * For each incoming IPv4 packet the program:
+ *   1. Drops the packet immediately if src_ip is in block_list and the entry
+ *      has not yet expired (expiry is a ktime_get_ns timestamp).
+ *   2. Applies a token-bucket rate limiter (100 tok/s, burst 200) stored in
+ *      rate_limit_map; drops the packet when the bucket is empty.
+ *   3. Increments the cumulative counter in request_count so the Go agent can
+ *      calculate req/s and decide whether to extend/add a block.
+ *   4. Records per-packet processing latency in latency_map.
+ *
+ * Maps are LRU hash maps capped at 10 000 entries each.
+ */
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>

@@ -1,3 +1,5 @@
+// Package system collects and reports system-level performance metrics
+// (CPU, memory, disk, network I/O) from the agent host via gopsutil.
 package system
 
 import (

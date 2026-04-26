@@ -10,7 +10,8 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
 )
 
-// StartSystemCollector subscribes to system metrics reports from agents
+// StartSystemCollector subscribes to "system.metrics" on NATS and persists
+// each incoming SystemMetricsReport to the system_metrics table.
 func StartSystemCollector() {
 	err := messaging.Subscribe("system.metrics", func(data []byte) {
 		var report models.SystemMetricsReport

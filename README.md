@@ -10,6 +10,7 @@
 
 - [Architecture](#architecture)
 - [Data Flow](#data-flow)
+- [eBPF Maps](#ebpf-maps)
 - [Rule Matching](#rule-matching)
 - [Environment Tags](#environment-tags)
 - [Requirements](#requirements)
@@ -114,12 +115,27 @@ PUT /api/rules/:id
 
 ---
 
+## eBPF Maps
+
+The XDP program maintains four LRU hash maps (max 10 000 entries each), keyed by the source IPv4 address as a `uint32`:
+
+| Map | Key | Value | Purpose |
+|-----|-----|-------|---------|
+| `request_count` | `u32` src IP | `{count, last_seen}` | Cumulative packet counter read by the Go agent every 10 s to calculate req/s |
+| `block_list` | `u32` src IP | `u64` ktime expiry (ns) | Hard block — packets are dropped until the expiry timestamp passes |
+| `rate_limit_map` | `u32` src IP | `{tokens, last_refill}` | Token-bucket state; the XDP program itself drops packets when tokens reach 0 |
+| `latency_map` | `u32` src IP | `{total_ns, count, min_ns, max_ns}` | Per-packet XDP processing latency accumulated for the agent's latency reports |
+
+The XDP program runs in **generic mode** (`XDP_FLAGS_SKB_MODE`) for broad driver compatibility. Native or offload mode can improve performance on supported NICs but requires driver support.
+
+---
+
 ## Rule Matching
 
 The agent evaluates each IP against all active rules:
 
 1. Find all rules where the IP's req/s exceeds the rule's `threshold`.
-2. **`block` always takes priority over `rate_limit`.**
+2. **`block` always takes priority over `ratelimit`.**
 3. Among rules with the same action, the **highest threshold wins** (most specific rule).
 
 ### Token Bucket (kernel-level rate limiting)
@@ -345,7 +361,7 @@ curl -X POST http://localhost:8080/api/rules \
   -d '{
     "name": "Rate-limit production at >200 req/s",
     "threshold": 200,
-    "action": "rate_limit",
+    "action": "ratelimit",
     "duration": 30,
     "tag": "production"
   }'
@@ -357,7 +373,7 @@ curl -X POST http://localhost:8080/api/rules \
 |-------|------|-------------|
 | `name` | `string` | Descriptive name |
 | `threshold` | `int` | Requests per second trigger threshold |
-| `action` | `string` | `"block"` or `"rate_limit"` |
+| `action` | `string` | `"block"` or `"ratelimit"` |
 | `duration` | `int` | Enforcement duration in seconds |
 | `tag` | `string` | *(optional)* Environment tag — empty = global |
 
@@ -373,7 +389,7 @@ The database is created automatically on server startup. TimescaleDB uses hypert
 id          INTEGER PRIMARY KEY
 name        TEXT
 threshold   INTEGER
-action      TEXT        -- "block" or "rate_limit"
+action      TEXT        -- "block" or "ratelimit"
 duration    INTEGER     -- seconds
 tag         TEXT        -- empty = global rule
 created_at  DATETIME
