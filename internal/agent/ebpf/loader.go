@@ -27,6 +27,13 @@ type RateLimitState struct {
     LastRefill uint64
 }
 
+type LatencyStats struct {
+    TotalLatencyNs uint64
+    PacketCount    uint64
+    MinLatencyNs   uint64
+    MaxLatencyNs   uint64
+}
+
 // Load loads the eBPF program and attaches it to the specified network interface.
 func Load(iface string) (*PolicyProgram, error) {
     p := &PolicyProgram{}
@@ -137,6 +144,56 @@ func (p *PolicyProgram) IsRateLimited(ip net.IP) bool {
         return false
     }
     return state.Tokens == 0
+}
+
+// GetLatencyStats returns latency statistics for an IP
+func (p *PolicyProgram) GetLatencyStats(ip net.IP) (*LatencyStats, error) {
+    key := ipToUint32(ip)
+
+    var stats LatencyStats
+    err := p.objs.LatencyMap.Lookup(key, &stats)
+    if err != nil {
+        // IP not found — no latency data yet
+        return nil, nil
+    }
+
+    return &stats, nil
+}
+
+// GetAllLatencyStats retrieves latency stats for all IPs
+func (p *PolicyProgram) GetAllLatencyStats() (map[string]*LatencyStats, error) {
+    result := make(map[string]*LatencyStats)
+
+    var key uint32
+    var stats LatencyStats
+    iter := p.objs.LatencyMap.Iterate()
+
+    for iter.Next(&key, &stats) {
+        ip := uint32ToIP(key)
+        statsCopy := stats  // Make a copy to avoid pointer issues
+        result[ip.String()] = &statsCopy
+    }
+
+    return result, iter.Err()
+}
+
+// GetAvgLatency calculates average latency for an IP in microseconds
+func (stats *LatencyStats) GetAvgLatencyUs() float64 {
+    if stats.PacketCount == 0 {
+        return 0
+    }
+    avgNs := float64(stats.TotalLatencyNs) / float64(stats.PacketCount)
+    return avgNs / 1000.0  // Convert to microseconds
+}
+
+// GetMinLatencyUs returns minimum latency in microseconds
+func (stats *LatencyStats) GetMinLatencyUs() float64 {
+    return float64(stats.MinLatencyNs) / 1000.0
+}
+
+// GetMaxLatencyUs returns maximum latency in microseconds
+func (stats *LatencyStats) GetMaxLatencyUs() float64 {
+    return float64(stats.MaxLatencyNs) / 1000.0
 }
 
 // getKtimeNs retrieves the current kernel time in nanoseconds, which is used for timing the block duration in the eBPF program.

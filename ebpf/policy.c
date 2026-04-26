@@ -21,6 +21,14 @@ struct rate_limit_state {
     __u64 last_refill;  // last refill timestamp
 };
 
+// Latency statistics per IP
+struct latency_stats {
+    __u64 total_latency_ns;  // total processing time in nanoseconds
+    __u64 packet_count;      // number of packets processed
+    __u64 min_latency_ns;    // minimum latency observed
+    __u64 max_latency_ns;    // maximum latency observed
+};
+
 //Map 1: Tracks the number of requests and last seen time for each source IP
 struct {
     __uint (type, BPF_MAP_TYPE_LRU_HASH);
@@ -45,6 +53,13 @@ struct {
     __type(value, struct rate_limit_state);
 } rate_limit_map SEC(".maps");
 
+// Map 4: latency statistics per IP
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 10000);
+    __type(key,   __u32);
+    __type(value, struct latency_stats);
+} latency_map SEC(".maps");
 
 // Token bucket — returns XDP_PASS or XDP_DROP
 static __always_inline int check_rate_limit(__u32 src_ip, __u64 now)
@@ -83,12 +98,42 @@ static __always_inline int check_rate_limit(__u32 src_ip, __u64 now)
     return XDP_DROP;
 }
 
+// Update latency statistics
+static __always_inline void update_latency(__u32 src_ip, __u64 latency_ns)
+{
+    struct latency_stats *stats;
+    struct latency_stats new_stats;
+
+    stats = bpf_map_lookup_elem(&latency_map, &src_ip);
+
+    if (!stats) {
+        // First packet — initialize stats
+        new_stats.total_latency_ns = latency_ns;
+        new_stats.packet_count = 1;
+        new_stats.min_latency_ns = latency_ns;
+        new_stats.max_latency_ns = latency_ns;
+        bpf_map_update_elem(&latency_map, &src_ip, &new_stats, BPF_ANY);
+        return;
+    }
+
+    // Update existing stats
+    stats->total_latency_ns += latency_ns;
+    stats->packet_count++;
+
+    if (latency_ns < stats->min_latency_ns)
+        stats->min_latency_ns = latency_ns;
+    
+    if (latency_ns > stats->max_latency_ns)
+        stats->max_latency_ns = latency_ns;
+}
 
 SEC("xdp")
 int policy_filter(struct xdp_md *ctx)
 {
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
+
+    __u64 start_time = bpf_ktime_get_ns();
 
     // Parse Ethernet header
     struct ethhdr *eth = data;
@@ -107,15 +152,21 @@ int policy_filter(struct xdp_md *ctx)
     __u32 src_ip = ip->saddr;
     __u64 now = bpf_ktime_get_ns();
 
+    int action = XDP_PASS;
+
     // Step 1: check if IP is blocked (DDoS block)
     __u64 *blocked_until = bpf_map_lookup_elem(&block_list, &src_ip);
     if (blocked_until && *blocked_until > now) {
         return XDP_DROP;
+        goto update_stats;
     }
 
     // Step 2: check rate limit (token bucket)
-    if (check_rate_limit(src_ip, now) == XDP_DROP)
-        return XDP_DROP;
+    if (check_rate_limit(src_ip, now) == XDP_DROP){
+        action = XDP_DROP;
+        goto update_stats;
+    }
+        
 
     // Step 3: update request count and last seen time
     struct ip_stats *stats = bpf_map_lookup_elem(&request_count, &src_ip);
@@ -127,7 +178,14 @@ int policy_filter(struct xdp_md *ctx)
         bpf_map_update_elem(&request_count, &src_ip, &new_stats, BPF_ANY);
     }
 
-    return XDP_PASS;
+update_stats:
+    {
+        __u64 end_time = bpf_ktime_get_ns();
+        __u64 latency = end_time - start_time;
+        update_latency(src_ip, latency);
+    }
+
+    return action;
 }
 
 char _license[] SEC("license") = "GPL";

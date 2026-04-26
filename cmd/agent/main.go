@@ -16,6 +16,7 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/agent/config"
 	ebpfloader "github.com/ahmadsaflo1/ebpf-policy/internal/agent/ebpf"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/agent/reporter"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/agent/system"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
 )
@@ -55,6 +56,12 @@ func main() {
 	rep := reporter.New(cfg.AgentID, &serverAvailable)
 	rep.Start()
 
+	sysReporter := system.NewReporter(cfg.AgentID, &serverAvailable)
+	sysMonitor := system.New(cfg.AgentID, 30*time.Second, func(metrics models.SystemMetrics) {
+		sysReporter.Report(metrics)
+	})
+	sysMonitor.Start()
+
 	// Track previous counts to calculate req/s delta between ticks.
 	prevCounts := make(map[string]uint64)
 
@@ -65,6 +72,12 @@ func main() {
 			if err != nil {
 				log.Println("Failed to read eBPF stats:", err)
 				continue
+			}
+
+			latencyStats, err := program.GetAllLatencyStats()
+			if err != nil {
+				log.Println("Failed to read latency stats:", err)
+				latencyStats = make(map[string]*ebpfloader.LatencyStats)
 			}
 
 			for ipStr, count := range stats {
@@ -104,12 +117,21 @@ func main() {
 					}
 				}
 
-				rep.AddStat(models.ClientStats{
+				clientStat := models.ClientStats{
 					IP:        ipStr,
 					ReqPerSec: reqPerSec,
 					Blocked:   boolToInt(isBlocked),
 					Passed:    int(diff),
-				})
+				}
+
+				// Add latency metrics if available
+				if latency, ok := latencyStats[ipStr]; ok && latency != nil {
+					clientStat.AvgLatencyUs = latency.GetAvgLatencyUs()
+					clientStat.MinLatencyUs = latency.GetMinLatencyUs()
+					clientStat.MaxLatencyUs = latency.GetMaxLatencyUs()
+				}
+
+				rep.AddStat(clientStat)
 			}
 		}
 	}()

@@ -5,16 +5,27 @@ package db
 import (
 	"database/sql"
 	"log"
-
-	_ "github.com/mattn/go-sqlite3"
+    "os"
 )
 
 // DB is the shared database connection used by HTTP handlers.
 var DB *sql.DB
 
+// Init initializes database connection (SQLite or TimescaleDB based on env)
+func Init() {
+	// Check if USE_TIMESCALE env variable is set
+	if os.Getenv("USE_TIMESCALE") == "true" {
+		log.Println("🐘 Using TimescaleDB (PostgreSQL)")
+		InitTimescale()
+	} else {
+		log.Println("📦 Using SQLite (default)")
+		InitSQLite()
+	}
+}
+
 // Init opens (or creates) the SQLite database file and ensures the required
 // tables exist. Calls log.Fatal on any error.
-func Init() {
+func InitSQLite() {
     var err error
     DB, err = sql.Open("sqlite3", "./policy.db")
     if err != nil {
@@ -48,13 +59,32 @@ func createTables() error {
 
     _, err = DB.Exec(`
     CREATE TABLE IF NOT EXISTS client_stats (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        agent_id    TEXT    NOT NULL,
-        ip          TEXT    NOT NULL,
-        req_per_sec INTEGER NOT NULL,
-        blocked     INTEGER NOT NULL,
-        passed      INTEGER NOT NULL,
-        recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id       TEXT    NOT NULL,
+        ip             TEXT    NOT NULL,
+        req_per_sec    INTEGER NOT NULL,
+        blocked        INTEGER NOT NULL,
+        passed         INTEGER NOT NULL,
+        avg_latency_us REAL DEFAULT 0,
+        min_latency_us REAL DEFAULT 0,
+        max_latency_us REAL DEFAULT 0,
+        recorded_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+
+    _, err = DB.Exec(`
+    CREATE TABLE IF NOT EXISTS system_metrics (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id         TEXT    NOT NULL,
+        cpu_percent      REAL    NOT NULL,
+        memory_percent   REAL    NOT NULL,
+        memory_used_mb   INTEGER NOT NULL,
+        memory_total_mb  INTEGER NOT NULL,
+        disk_used_gb     INTEGER NOT NULL,
+        disk_total_gb    INTEGER NOT NULL,
+        disk_percent     REAL    NOT NULL,
+        net_bytes_sent   INTEGER NOT NULL,
+        net_bytes_recv   INTEGER NOT NULL,
+        recorded_at      DATETIME DEFAULT CURRENT_TIMESTAMP
     )`)
 
     return err

@@ -26,6 +26,7 @@ func main() {
 	defer messaging.Close()
 
 	metrics.StartCollector()
+	metrics.StartSystemCollector()
 
 	r := gin.Default()
 
@@ -40,6 +41,19 @@ func main() {
 		rules.GET("/:id", api.GetRule)
 		rules.PUT("/:id", api.UpdateRule)
 		rules.DELETE("/:id", api.DeleteRule)
+	}
+
+	metricsAPI := r.Group("/api/metrics")
+	{
+		metricsAPI.GET("/search", api.SearchClients)        // Search client stats
+		metricsAPI.GET("/aggregated", api.GetAggregatedMetrics) // Aggregated stats per IP
+		metricsAPI.GET("/top", api.GetTopClients)           // Top N clients
+	}
+
+	systemAPI := r.Group("/api/system")
+	{
+		systemAPI.GET("/metrics", api.GetSystemMetrics)
+		systemAPI.GET("/metrics/aggregated", api.GetSystemMetricsAggregated)
 	}
 
 	srv := &http.Server{
