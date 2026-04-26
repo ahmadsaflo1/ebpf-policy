@@ -22,7 +22,8 @@ import (
 )
 
 // serverAvailable tracks whether the policy server is reachable
-var serverAvailable bool
+// Start optimistically as true, and set to false only if connection fails
+var serverAvailable = true
 
 func main() {
 	log.Println("Starting Policy Agent ...")

@@ -49,13 +49,14 @@ build-agent:
 	go build -o agent ./cmd/agent/
 
 start-infra:
-	@echo "Starting infrastructure (TimescaleDB + NATS)..."
+	@echo "Starting infrastructure (TimescaleDB + NATS + Grafana)..."
 	docker-compose up -d
 	@echo ""
 	@echo "✅ Infrastructure started!"
 	@echo "   TimescaleDB: localhost:5432"
 	@echo "   NATS: localhost:4222"
 	@echo "   NATS Monitoring: http://localhost:8222"
+	@echo "   Grafana: http://localhost:3000 (username: admin, password: admin)"
 
 stop-infra:
 	@echo "Stopping infrastructure..."
@@ -83,13 +84,15 @@ run-agent:
 
 status:
 	@echo "Infrastructure Status:"
-	@docker ps --filter "name=timescaledb" --filter "name=nats" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
+	@docker ps --filter "name=timescaledb" --filter "name=nats" --filter "name=grafana" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 logs-db:
 	docker logs -f timescaledb
 
 logs-nats:
 	docker logs -f nats
+
+logs-grafana:
+	docker logs -f grafana
 
 clean:
 	@echo "Cleaning build artifacts..."
