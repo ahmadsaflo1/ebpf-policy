@@ -14,7 +14,8 @@
 - [Rule Matching](#rule-matching)
 - [Environment Tags](#environment-tags)
 - [Requirements](#requirements)
-- [Quick Start (Docker Compose)](#quick-start-docker-compose)
+- [Installation](#installation)
+- [Quick Start (using Make)](#quick-start-using-make)
 - [Manual Installation](#manual-installation)
 - [Running the System](#running-the-system)
 - [REST API](#rest-api)
@@ -190,7 +191,68 @@ sudo ENV=staging AGENT_ID=staging-agent-1 ./agent
 
 ---
 
-## Quick Start (Docker Compose)
+## Installation
+
+Run these steps once on a fresh Ubuntu/Debian machine before starting the system.
+
+### 1. System packages
+
+```bash
+sudo apt update && sudo apt install -y \
+    clang llvm libbpf-dev \
+    linux-headers-$(uname -r) \
+    make git gcc curl wget
+```
+
+> **Note — missing `asm/types.h`:** On some Ubuntu/Debian systems the architecture-specific headers are not symlinked to `/usr/include/asm`, which causes `clang` and `bpf2go` to fail with `fatal error: 'asm/types.h' file not found`. Fix it with:
+> ```bash
+> sudo ln -s /usr/include/x86_64-linux-gnu/asm /usr/include/asm
+> ```
+
+### 2. Go
+
+```bash
+wget https://go.dev/dl/go1.22.4.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.22.4.linux-amd64.tar.gz
+rm go1.22.4.linux-amd64.tar.gz
+
+echo 'export PATH=$PATH:/usr/local/go/bin:$(go env GOPATH)/bin' >> ~/.bashrc
+source ~/.bashrc
+
+go version
+```
+
+### 3. Docker + Docker Compose
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
+sudo apt install -y docker-compose-plugin
+
+docker --version
+docker compose version
+```
+
+> Re-login (or run `newgrp docker`) so the group change takes effect before using `docker` without `sudo`.
+
+### 4. bpf2go
+
+```bash
+go install github.com/cilium/ebpf/cmd/bpf2go@latest
+export PATH=$PATH:$(go env GOPATH)/bin
+```
+
+### 5. Clone the repository
+
+```bash
+git clone https://github.com/ahmadsaflo1/ebpf-policy.git
+cd ebpf-policy
+```
+
+---
+
+## Quick Start (using Make)
 
 The Makefile wraps all steps. Infrastructure (TimescaleDB + NATS) runs in Docker.
 
@@ -223,29 +285,19 @@ make help          # List all targets
 
 ## Manual Installation
 
-### 1. System dependencies
+### 1. Start infrastructure
 
 ```bash
-sudo apt update && sudo apt install -y \
-    clang llvm libbpf-dev \
-    linux-headers-$(uname -r) \
-    make git gcc
+make start-infra
 ```
 
-### 2. bpf2go
-
-```bash
-go install github.com/cilium/ebpf/cmd/bpf2go@latest
-export PATH=$PATH:$(go env GOPATH)/bin
-```
-
-### 3. Compile the eBPF program
+### 2. Compile the eBPF program
 
 ```bash
 cd ebpf && make && cd ..
 ```
 
-### 4. Generate Go bindings
+### 3. Generate Go bindings
 
 ```bash
 cd internal/agent/ebpf
@@ -260,7 +312,7 @@ cd ../../..
 | `policy_bpfel.o` | Compiled eBPF bytecode for little-endian |
 | `policy_bpfeb.o` | Compiled eBPF bytecode for big-endian |
 
-### 5. Build binaries
+### 4. Build binaries
 
 ```bash
 go build -o server ./cmd/server/
