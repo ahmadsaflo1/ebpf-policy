@@ -267,8 +267,13 @@ make build-server build-agent
 # 3. Run the server (uses TimescaleDB by default)
 make run-server
 
-# 4. Run the agent (requires root for eBPF)
-make run-agent
+#    Override variables to match your environment:
+#      INTERFACE   - Network interface to monitor  (default: eth0)
+#      AGENT_ID    - Unique name for this agent     (default: unknown)
+#      ENV         - Environment tag               (default: "" = receives all rules)
+#      SERVER_URL  - Policy server address         (default: http://localhost:8080)
+#      NATS_URL    - NATS broker address           (default: nats://localhost:4222)
+make run-agent INTERFACE=<iface> AGENT_ID=<name> ENV=<tag> SERVER_URL=http://<server-ip>:8080 NATS_URL=nats://<server-ip>:4222
 ```
 
 Other useful targets:

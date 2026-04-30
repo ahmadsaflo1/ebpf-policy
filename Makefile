@@ -50,7 +50,7 @@ build-agent:
 
 start-infra:
 	@echo "Starting infrastructure (TimescaleDB + NATS + Grafana)..."
-	docker-compose up -d
+	docker compose up -d
 	@echo ""
 	@echo "✅ Infrastructure started!"
 	@echo "   TimescaleDB: localhost:5432"
@@ -60,7 +60,7 @@ start-infra:
 
 stop-infra:
 	@echo "Stopping infrastructure..."
-	docker-compose down
+	docker compose down
 
 run-server:
 	@echo "Starting policy server with TimescaleDB..."
