@@ -1,46 +1,40 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
-	"github.com/gin-gonic/gin"
 )
-
-// ClientMetric represents aggregated metrics for a client IP
-type ClientMetric struct {
-	IP            string    `json:"ip"`
-	AgentID       string    `json:"agent_id"`
-	AvgReqPerSec  float64   `json:"avg_req_per_sec"`
-	MaxReqPerSec  int       `json:"max_req_per_sec"`
-	TotalBlocked  int       `json:"total_blocked"`
-	TotalPassed   int       `json:"total_passed"`
-	FirstSeen     time.Time `json:"first_seen"`
-	LastSeen      time.Time `json:"last_seen"`
-}
 
 // SearchClients handles GET /api/metrics/search
 // Query params: ip, agent, limit, offset
-func SearchClients(c *gin.Context) {
-	ip := c.Query("ip")
-	agent := c.Query("agent")
-	limit := c.DefaultQuery("limit", "100")
-	offset := c.DefaultQuery("offset", "0")
+func SearchClients(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	ip := q.Get("ip")
+	agent := q.Get("agent")
+	limit := q.Get("limit")
+	if limit == "" {
+		limit = "100"
+	}
+	offset := q.Get("offset")
+	if offset == "" {
+		offset = "0"
+	}
 
 	var query string
 	var args []interface{}
 
 	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB query
 		query = `
-			SELECT 
-				agent_id, 
-				ip::text, 
-				req_per_sec, 
-				blocked, 
+			SELECT
+				agent_id,
+				ip::text,
+				req_per_sec,
+				blocked,
 				passed,
 				avg_latency_us,
 				min_latency_us,
@@ -53,13 +47,12 @@ func SearchClients(c *gin.Context) {
 			LIMIT $5 OFFSET $6`
 		args = []interface{}{ip, "%" + ip + "%", agent, agent, limit, offset}
 	} else {
-		// SQLite query
 		query = `
-			SELECT 
-				agent_id, 
-				ip, 
-				req_per_sec, 
-				blocked, 
+			SELECT
+				agent_id,
+				ip,
+				req_per_sec,
+				blocked,
 				passed,
 				avg_latency_us,
 				min_latency_us,
@@ -75,12 +68,12 @@ func SearchClients(c *gin.Context) {
 
 	rows, err := db.DB.Query(query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
 
-	var results []map[string]interface{}
+	results := []map[string]interface{}{}
 	for rows.Next() {
 		var agentID, ipAddr string
 		var reqPerSec, blocked, passed int
@@ -105,7 +98,7 @@ func SearchClients(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"count":   len(results),
 		"results": results,
 	})
@@ -113,15 +106,19 @@ func SearchClients(c *gin.Context) {
 
 // GetAggregatedMetrics handles GET /api/metrics/aggregated
 // Query params: ip (required), timerange (optional, default 1h)
-func GetAggregatedMetrics(c *gin.Context) {
-	ip := c.Query("ip")
+func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	ip := q.Get("ip")
 	if ip == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ip parameter is required"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ip parameter is required"})
 		return
 	}
 
-	timerange := c.DefaultQuery("timerange", "1h")
-	
+	timerange := q.Get("timerange")
+	if timerange == "" {
+		timerange = "1h"
+	}
+
 	var query string
 	var args []interface{}
 	var resultIP string
@@ -133,11 +130,10 @@ func GetAggregatedMetrics(c *gin.Context) {
 	var firstSeen, lastSeen time.Time
 
 	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB query with PostgreSQL interval
 		interval := parseTimerangeToInterval(timerange)
-		
+
 		query = `
-			SELECT 
+			SELECT
 				ip::text,
 				COUNT(*) as total_records,
 				AVG(req_per_sec) as avg_req_per_sec,
@@ -162,21 +158,20 @@ func GetAggregatedMetrics(c *gin.Context) {
 			&firstSeen, &lastSeen,
 		)
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{
+			writeJSON(w, http.StatusNotFound, map[string]string{
 				"error": "no data found for this IP in the specified timerange",
 			})
 			return
 		}
 	} else {
-		// SQLite query
 		duration, err := parseDuration(timerange)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid timerange format"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid timerange format"})
 			return
 		}
 
 		query = `
-			SELECT 
+			SELECT
 				ip,
 				COUNT(*) as total_records,
 				AVG(req_per_sec) as avg_req_per_sec,
@@ -190,7 +185,7 @@ func GetAggregatedMetrics(c *gin.Context) {
 				MIN(recorded_at) as first_seen,
 				MAX(recorded_at) as last_seen
 			FROM client_stats
-			WHERE ip = ? 
+			WHERE ip = ?
 			  AND recorded_at > datetime('now', ?)
 			GROUP BY ip`
 		args = []interface{}{ip, duration}
@@ -202,18 +197,17 @@ func GetAggregatedMetrics(c *gin.Context) {
 			&firstSeenStr, &lastSeenStr,
 		)
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{
+			writeJSON(w, http.StatusNotFound, map[string]string{
 				"error": "no data found for this IP in the specified timerange",
 			})
 			return
 		}
 
-		// Parse timestamps for SQLite
 		firstSeen, _ = time.Parse("2006-01-02 15:04:05", firstSeenStr)
 		lastSeen, _ = time.Parse("2006-01-02 15:04:05", lastSeenStr)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ip":              resultIP,
 		"timerange":       timerange,
 		"total_records":   totalRecords,
@@ -233,20 +227,29 @@ func GetAggregatedMetrics(c *gin.Context) {
 // GetTopClients handles GET /api/metrics/top
 // Returns top N clients by request rate
 // Query params: limit (default 10), timerange (default 1h), order_by (req_per_sec or blocked)
-func GetTopClients(c *gin.Context) {
-	limit := c.DefaultQuery("limit", "10")
-	timerange := c.DefaultQuery("timerange", "1h")
-	orderBy := c.DefaultQuery("order_by", "req_per_sec")
+func GetTopClients(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit := q.Get("limit")
+	if limit == "" {
+		limit = "10"
+	}
+	timerange := q.Get("timerange")
+	if timerange == "" {
+		timerange = "1h"
+	}
+	orderBy := q.Get("order_by")
+	if orderBy == "" {
+		orderBy = "req_per_sec"
+	}
 
-	// Validate order_by
 	validOrderBy := map[string]string{
 		"req_per_sec": "avg_req_per_sec",
 		"blocked":     "total_blocked",
 	}
-	
+
 	orderColumn, ok := validOrderBy[orderBy]
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "order_by must be 'req_per_sec' or 'blocked'"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "order_by must be 'req_per_sec' or 'blocked'"})
 		return
 	}
 
@@ -254,11 +257,10 @@ func GetTopClients(c *gin.Context) {
 	var args []interface{}
 
 	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB
 		interval := parseTimerangeToInterval(timerange)
-		
+
 		query = `
-			SELECT 
+			SELECT
 				ip::text,
 				AVG(req_per_sec) as avg_req_per_sec,
 				MAX(req_per_sec) as max_req_per_sec,
@@ -272,15 +274,14 @@ func GetTopClients(c *gin.Context) {
 			LIMIT $2`
 		args = []interface{}{interval, limit}
 	} else {
-		// SQLite
 		duration, err := parseDuration(timerange)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid timerange format"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid timerange format"})
 			return
 		}
 
 		query = `
-			SELECT 
+			SELECT
 				ip,
 				AVG(req_per_sec) as avg_req_per_sec,
 				MAX(req_per_sec) as max_req_per_sec,
@@ -297,12 +298,12 @@ func GetTopClients(c *gin.Context) {
 
 	rows, err := db.DB.Query(query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
 
-	var results []map[string]interface{}
+	results := []map[string]interface{}{}
 	for rows.Next() {
 		var ip string
 		var avgReq, maxReq float64
@@ -322,7 +323,7 @@ func GetTopClients(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"timerange": timerange,
 		"order_by":  orderBy,
 		"count":     len(results),
@@ -358,7 +359,7 @@ func parseTimerangeToInterval(timerange string) string {
 // Examples: "1h" -> "-1 hour", "30m" -> "-30 minutes", "7d" -> "-7 days"
 func parseDuration(timerange string) (string, error) {
 	if len(timerange) < 2 {
-		return "", gin.Error{Err: nil}
+		return "", fmt.Errorf("invalid timerange format")
 	}
 
 	value := timerange[:len(timerange)-1]
@@ -378,7 +379,7 @@ func parseDuration(timerange string) (string, error) {
 	case "d":
 		sqlUnit = "days"
 	default:
-		return "", gin.Error{Err: nil}
+		return "", fmt.Errorf("invalid timerange unit: %s", unit)
 	}
 
 	return "-" + strconv.Itoa(num) + " " + sqlUnit, nil

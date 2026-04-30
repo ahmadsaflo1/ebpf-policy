@@ -6,15 +6,21 @@ import (
 	"time"
 
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
-	"github.com/gin-gonic/gin"
 )
 
 // GetSystemMetrics handles GET /api/system/metrics
 // Query params: agent (optional), timerange (optional, default 1h), limit (default 100)
-func GetSystemMetrics(c *gin.Context) {
-	agent := c.Query("agent")
-	timerange := c.DefaultQuery("timerange", "1h")
-	limit := c.DefaultQuery("limit", "100")
+func GetSystemMetrics(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	agent := q.Get("agent")
+	timerange := q.Get("timerange")
+	if timerange == "" {
+		timerange = "1h"
+	}
+	limit := q.Get("limit")
+	if limit == "" {
+		limit = "100"
+	}
 
 	var query string
 	var args []interface{}
@@ -22,9 +28,9 @@ func GetSystemMetrics(c *gin.Context) {
 	if os.Getenv("USE_TIMESCALE") == "true" {
 		// TimescaleDB
 		interval := parseTimerangeToInterval(timerange)
-		
+
 		query = `
-			SELECT 
+			SELECT
 				agent_id,
 				cpu_percent,
 				memory_percent,
@@ -46,12 +52,12 @@ func GetSystemMetrics(c *gin.Context) {
 		// SQLite
 		duration, err := parseDuration(timerange)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid timerange format"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid timerange format"})
 			return
 		}
 
 		query = `
-			SELECT 
+			SELECT
 				agent_id,
 				cpu_percent,
 				memory_percent,
@@ -73,7 +79,7 @@ func GetSystemMetrics(c *gin.Context) {
 
 	rows, err := db.DB.Query(query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
@@ -108,7 +114,7 @@ func GetSystemMetrics(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"count":   len(results),
 		"results": results,
 	})
@@ -116,15 +122,19 @@ func GetSystemMetrics(c *gin.Context) {
 
 // GetSystemMetricsAggregated handles GET /api/system/metrics/aggregated
 // Returns aggregated system metrics per agent
-func GetSystemMetricsAggregated(c *gin.Context) {
-	agent := c.Query("agent")
+func GetSystemMetricsAggregated(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	agent := q.Get("agent")
 	if agent == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "agent parameter is required"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "agent parameter is required"})
 		return
 	}
 
-	timerange := c.DefaultQuery("timerange", "1h")
-	
+	timerange := q.Get("timerange")
+	if timerange == "" {
+		timerange = "1h"
+	}
+
 	var query string
 	var args []interface{}
 	var agentID string
@@ -135,9 +145,9 @@ func GetSystemMetricsAggregated(c *gin.Context) {
 	if os.Getenv("USE_TIMESCALE") == "true" {
 		// TimescaleDB
 		interval := parseTimerangeToInterval(timerange)
-		
+
 		query = `
-			SELECT 
+			SELECT
 				agent_id,
 				AVG(cpu_percent) as avg_cpu,
 				MAX(cpu_percent) as max_cpu,
@@ -159,7 +169,7 @@ func GetSystemMetricsAggregated(c *gin.Context) {
 			&avgDisk, &maxDisk, &totalBytesSent, &totalBytesRecv, &totalRecords,
 		)
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{
+			writeJSON(w, http.StatusNotFound, map[string]string{
 				"error": "no system metrics found for this agent in the specified timerange",
 			})
 			return
@@ -168,12 +178,12 @@ func GetSystemMetricsAggregated(c *gin.Context) {
 		// SQLite
 		duration, err := parseDuration(timerange)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid timerange format"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid timerange format"})
 			return
 		}
 
 		query = `
-			SELECT 
+			SELECT
 				agent_id,
 				AVG(cpu_percent) as avg_cpu,
 				MAX(cpu_percent) as max_cpu,
@@ -195,14 +205,14 @@ func GetSystemMetricsAggregated(c *gin.Context) {
 			&avgDisk, &maxDisk, &totalBytesSent, &totalBytesRecv, &totalRecords,
 		)
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{
+			writeJSON(w, http.StatusNotFound, map[string]string{
 				"error": "no system metrics found for this agent in the specified timerange",
 			})
 			return
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"agent_id":          agentID,
 		"timerange":         timerange,
 		"total_records":     totalRecords,
