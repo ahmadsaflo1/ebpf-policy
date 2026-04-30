@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -17,7 +18,6 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/api"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/metrics"
-	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -28,41 +28,33 @@ func main() {
 	metrics.StartCollector()
 	metrics.StartSystemCollector()
 
-	r := gin.Default()
+	mux := http.NewServeMux()
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	rules := r.Group("/api/rules")
-	{
-		rules.GET("", api.GetRules)
-		rules.POST("", api.CreateRule)
-		rules.GET("/:id", api.GetRule)
-		rules.PUT("/:id", api.UpdateRule)
-		rules.DELETE("/:id", api.DeleteRule)
-	}
+	mux.HandleFunc("GET /api/rules", api.GetRules)
+	mux.HandleFunc("POST /api/rules", api.CreateRule)
+	mux.HandleFunc("GET /api/rules/{id}", api.GetRule)
+	mux.HandleFunc("PUT /api/rules/{id}", api.UpdateRule)
+	mux.HandleFunc("DELETE /api/rules/{id}", api.DeleteRule)
 
-	metricsAPI := r.Group("/api/metrics")
-	{
-		metricsAPI.GET("/search", api.SearchClients)        // Search client stats
-		metricsAPI.GET("/aggregated", api.GetAggregatedMetrics) // Aggregated stats per IP
-		metricsAPI.GET("/top", api.GetTopClients)           // Top N clients
-	}
+	mux.HandleFunc("GET /api/metrics/search", api.SearchClients)
+	mux.HandleFunc("GET /api/metrics/aggregated", api.GetAggregatedMetrics)
+	mux.HandleFunc("GET /api/metrics/top", api.GetTopClients)
 
-	systemAPI := r.Group("/api/system")
-	{
-		systemAPI.GET("/metrics", api.GetSystemMetrics)
-		systemAPI.GET("/metrics/aggregated", api.GetSystemMetricsAggregated)
-	}
+	mux.HandleFunc("GET /api/system/metrics/aggregated", api.GetSystemMetricsAggregated)
+	mux.HandleFunc("GET /api/system/metrics", api.GetSystemMetrics)
 
 	srv := &http.Server{
-		Addr:    ":8080",
-		Handler: r,
+		Addr:    ":" + getPort(),
+		Handler: mux,
 	}
 
 	go func() {
-		log.Println("Starting server on :8080 ...")
+		log.Printf("Starting server on %s ...", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server crashed: %s\n", err)
 		}
@@ -78,5 +70,11 @@ func main() {
 	defer cancel()
 	srv.Shutdown(ctx)
 	log.Println("Server gracefully stopped")
+}
 
+func getPort() string {
+	if p := os.Getenv("PORT"); p != "" {
+		return p
+	}
+	return "8080"
 }

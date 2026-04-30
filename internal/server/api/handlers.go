@@ -4,6 +4,7 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"os"
 	"strconv"
@@ -11,14 +12,13 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/policy"
-	"github.com/gin-gonic/gin"
 )
 
 // GetRules handles GET /api/rules.
 // Accepts an optional ?env= query parameter; when supplied, only rules whose
 // tag matches env or whose tag is empty (global) are returned.
-func GetRules(c *gin.Context) {
-	env := c.Query("env")
+func GetRules(w http.ResponseWriter, r *http.Request) {
+	env := r.URL.Query().Get("env")
 
 	var rows *sql.Rows
 	var err error
@@ -54,7 +54,7 @@ func GetRules(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
@@ -70,15 +70,15 @@ func GetRules(c *gin.Context) {
 		rules = append(rules, r)
 	}
 
-	c.JSON(http.StatusOK, rules)
+	writeJSON(w, http.StatusOK, rules)
 }
 
 // CreateRule handles POST /api/rules.
 // Persists the new rule and publishes an update event to NATS.
-func CreateRule(c *gin.Context) {
+func CreateRule(w http.ResponseWriter, r *http.Request) {
 	var rule models.PolicyRule
-	if err := c.ShouldBindJSON(&rule); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -96,7 +96,7 @@ func CreateRule(c *gin.Context) {
 		).Scan(&id)
 		
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 	} else {
@@ -107,7 +107,7 @@ func CreateRule(c *gin.Context) {
 			rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag,
 		)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 		id, _ = result.LastInsertId()
@@ -116,13 +116,13 @@ func CreateRule(c *gin.Context) {
 	rule.ID = int(id)
 	policy.PublishUpdate(rule)
 
-	c.JSON(http.StatusCreated, rule)
+	writeJSON(w, http.StatusCreated, rule)
 }
 
-// GetRule handles GET /api/rules/:id.
+// GetRule handles GET /api/rules/{id}.
 // Returns 404 if no rule with the given ID exists.
-func GetRule(c *gin.Context) {
-	id := c.Param("id")
+func GetRule(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	var rule models.PolicyRule
 	var err error
 
@@ -143,25 +143,25 @@ func GetRule(c *gin.Context) {
 	}
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, rule)
+	writeJSON(w, http.StatusOK, rule)
 }
 
-// UpdateRule handles PUT /api/rules/:id.
+// UpdateRule handles PUT /api/rules/{id}.
 // Updates the rule in the database and publishes the change to NATS.
 // Returns 404 if no rule with the given ID exists.
-func UpdateRule(c *gin.Context) {
-	id := c.Param("id")
+func UpdateRule(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	var rule models.PolicyRule
-	if err := c.ShouldBindJSON(&rule); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -187,13 +187,13 @@ func UpdateRule(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
 		return
 	}
 
@@ -201,14 +201,14 @@ func UpdateRule(c *gin.Context) {
 	rule.ID = ruleID
 	policy.PublishUpdate(rule)
 
-	c.JSON(http.StatusOK, gin.H{"message": "rule updated"})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "rule updated"})
 }
 
-// DeleteRule handles DELETE /api/rules/:id.
+// DeleteRule handles DELETE /api/rules/{id}.
 // The rule is fetched before deletion so its tag can be included in the NATS
 // delete event, ensuring only relevant agents are notified.
-func DeleteRule(c *gin.Context) {
-	id := c.Param("id")
+func DeleteRule(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 
 	var rule models.PolicyRule
 	var err error
@@ -230,11 +230,11 @@ func DeleteRule(c *gin.Context) {
 	}
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -246,17 +246,23 @@ func DeleteRule(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
 		return
 	}
 
 	policy.PublishDelete(rule)
 
-	c.JSON(http.StatusOK, gin.H{"message": "rule deleted"})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "rule deleted"})
+}
+
+func writeJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
 }
