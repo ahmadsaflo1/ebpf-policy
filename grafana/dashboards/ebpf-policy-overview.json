@@ -681,6 +681,15 @@
           "refId": "A"
         }
       ],
+      "transformations": [
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": ["ip"],
+            "keepFields": false
+          }
+        }
+      ],
       "title": "Top 10 IPs by Traffic",
       "type": "piechart"
     },
@@ -1273,14 +1282,14 @@
             "type": "postgres",
             "uid": "TimescaleDB"
           },
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  width_bucket(avg_latency_us, 0, 20, 40) * 0.5 AS latency_bucket,\n  COUNT(*) as count\nFROM client_stats\nWHERE $__timeFilter(time) AND avg_latency_us > 0 AND avg_latency_us < 20\nGROUP BY latency_bucket\nORDER BY latency_bucket",
+          "rawSql": "SELECT\n  (width_bucket(avg_latency_us, 0, 20, 40) * 0.5)::text AS latency_bucket,\n  COUNT(*) as count\nFROM client_stats\nWHERE $__timeFilter(time) AND avg_latency_us > 0 AND avg_latency_us < 20\nGROUP BY width_bucket(avg_latency_us, 0, 20, 40) * 0.5\nORDER BY width_bucket(avg_latency_us, 0, 20, 40) * 0.5",
           "refId": "A"
         }
       ],
       "title": "Latency Distribution (Histogram)",
-      "type": "timeseries"
+      "type": "barchart"
     },
     {
       "collapsed": false,
