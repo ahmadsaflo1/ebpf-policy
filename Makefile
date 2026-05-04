@@ -65,6 +65,7 @@ stop-infra:
 run-server:
 	@echo "Starting policy server with TimescaleDB..."
 	@echo "API: http://localhost:8080"
+	@echo "Dashboard: http://localhost:3000 (username: admin, password: admin)"
 	USE_TIMESCALE=true ./server
 
 run-agent:

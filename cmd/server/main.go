@@ -18,6 +18,7 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/api"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/metrics"
+	"github.com/ahmadsaflo1/ebpf-policy/web"
 )
 
 func main() {
@@ -29,6 +30,10 @@ func main() {
 	metrics.StartSystemCollector()
 
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, web.Templates, "templates/index.html")
+	})
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
