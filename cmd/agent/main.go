@@ -65,6 +65,8 @@ func main() {
 
 	// Track previous counts to calculate req/s delta between ticks.
 	prevCounts := make(map[string]uint64)
+	// Track which IPs were blocked last tick to detect when a block expires.
+	prevBlocked := make(map[string]bool)
 
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
@@ -88,20 +90,31 @@ func main() {
 				reqPerSec := int(diff) / 10
 
 				ip := net.ParseIP(ipStr)
-				rule := store.Match(reqPerSec)
 				isBlocked := program.IsBlocked(ip)
+				wasBlocked := prevBlocked[ipStr]
+				prevBlocked[ipStr] = isBlocked
+
+				rule := store.Match(reqPerSec)
 
 				if isBlocked {
 					if rule != nil && rule.Action == "block" {
-						// Still high traffic — extend the block
+						// Still high traffic while blocked — extend the block
 						duration := time.Duration(rule.Duration) * time.Second
 						program.BlockIP(ip, duration)
 						log.Printf("IP %s still active (%d req/s) — extending block\n",
 							ipStr, reqPerSec)
+					}
+					// Block expires automatically via eBPF block_list timestamp.
+				} else if wasBlocked {
+					// Block just expired — re-evaluate real traffic now that
+					// XDP is passing packets again.
+					if rule != nil && rule.Action == "block" {
+						duration := time.Duration(rule.Duration) * time.Second
+						program.BlockIP(ip, duration)
+						log.Printf("IP %s re-evaluated after block: still %d req/s — re-blocking for %ds!\n",
+							ipStr, reqPerSec, rule.Duration)
 					} else {
-						// Traffic calmed down — unblock
-						program.UnblockIP(ip)
-						log.Printf("IP %s calmed down (%d req/s) — unblocking\n",
+						log.Printf("IP %s re-evaluated after block: %d req/s — unblocked\n",
 							ipStr, reqPerSec)
 					}
 				} else if rule != nil {
@@ -111,7 +124,7 @@ func main() {
 						program.BlockIP(ip, duration)
 						log.Printf("IP %s exceeds limit (%d req/s) — blocking for %ds!\n",
 							ipStr, reqPerSec, rule.Duration)
-					} else if rule.Action == "ratelimit" {
+					} else if rule.Action == "rate_limit" {
 						// Exceeds rate limit — token bucket in eBPF handles dropping
 						log.Printf("IP %s is being rate limited (%d req/s)\n",
 							ipStr, reqPerSec)
