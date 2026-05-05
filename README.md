@@ -2,7 +2,7 @@
 
 > Distributed DDoS mitigation and traffic rate-limiting system with kernel-level packet filtering and centralized real-time policy management.
 
-**eBPF/XDP** filters packets directly at the network driver level — long before they reach the application layer — while policy decisions are distributed in real time via **NATS** to all running agents. System and traffic metrics are persisted to **TimescaleDB** (or SQLite) and queryable via REST.
+**eBPF/XDP** filters packets directly at the network driver level — long before they reach the application layer — while policy decisions are distributed in real time via **NATS** to all running agents. System and traffic metrics are persisted to **TimescaleDB** (or SQLite) and queryable via REST or the built-in web UI.
 
 ---
 
@@ -18,6 +18,7 @@
 - [Quick Start (using Make)](#quick-start-using-make)
 - [Manual Installation](#manual-installation)
 - [Running the System](#running-the-system)
+- [Web UI](#web-ui)
 - [REST API](#rest-api)
 - [Grafana Dashboard](#grafana-dashboard)
 - [Database Schema](#database-schema)
@@ -31,6 +32,7 @@
 ┌──────────────────────────────┐
 │         Policy Server        │   Control Plane
 │   REST API :8080             │
+│   Web UI :8080/              │
 │   SQLite / TimescaleDB       │
 │   Policy publishing          │
 │   Metrics collection         │
@@ -50,7 +52,7 @@
 
 | Component | Description |
 |-----------|-------------|
-| **Server** | Manages policies via REST API, persists rules and metrics to SQLite or TimescaleDB, and distributes changes via NATS |
+| **Server** | Manages policies via REST API, serves the web UI, persists rules and metrics to SQLite or TimescaleDB, and distributes changes via NATS |
 | **Agent** | Runs on each node, loads the eBPF program into the kernel, reports per-IP traffic stats and system metrics |
 | **eBPF/XDP** | Kernel-space C program that filters packets at the network interface with microsecond latency |
 | **NATS** | Message broker for policy distribution and metrics aggregation across all agents |
@@ -110,7 +112,10 @@ PUT /api/rules/:id
 **System metrics loop (per agent, every 30 s):**
 
 ```
-  → Collect CPU%, memory%, disk%, network I/O via gopsutil
+  → Collect CPU% from /proc/stat
+  → Collect memory% from /proc/meminfo
+  → Collect disk usage via syscall.Statfs
+  → Collect network I/O delta from /proc/net/dev
   → Publish SystemMetricsReport to NATS "system.metrics"
   → Server persists to system_metrics
 ```
@@ -337,8 +342,9 @@ go build -o agent ./cmd/agent/
 
 | Environment Variable | Default | Description |
 |----------------------|---------|-------------|
+| `PORT` | `8080` | HTTP port the server listens on |
 | `NATS_URL` | `nats://localhost:4222` | NATS broker address |
-| `USE_TIMESCALE` | *(unset = SQLite)* | Set to any value to use TimescaleDB |
+| `USE_TIMESCALE` | *(unset = SQLite)* | Set to `true` to use TimescaleDB |
 | `POSTGRES_HOST` | `localhost` | TimescaleDB host |
 | `POSTGRES_PORT` | `5432` | TimescaleDB port |
 | `POSTGRES_USER` | `ebpf_user` | Database user |
@@ -368,6 +374,22 @@ sudo INTERFACE=<interface> \
 
 ---
 
+## Web UI
+
+The server ships a built-in web interface served at `http://<server>:8080/`. No extra setup is needed.
+
+### Tabs
+
+| Tab | Description |
+|-----|-------------|
+| **Rules** | Create, view, edit, and delete policy rules with live validation |
+| **Traffic** | Top clients by req/s / blocks / rate-limits; per-IP search; aggregated stats over a time range |
+| **System** | Recent and aggregated system metrics (CPU, memory, disk, network I/O) per agent |
+
+A live health indicator in the header reflects the server's `/health` endpoint status in real time.
+
+---
+
 ## REST API
 
 Base URL: `http://<server>:8080`
@@ -376,6 +398,7 @@ Base URL: `http://<server>:8080`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `GET` | `/` | Web UI (browser dashboard) |
 | `GET` | `/health` | Server health check |
 | `GET` | `/api/rules` | List all rules (optional `?env=<tag>`) |
 | `POST` | `/api/rules` | Create a new rule |
@@ -439,44 +462,44 @@ curl -X POST http://<server-ip>:8080/api/rules \
 
 ## Grafana Dashboard
 
-Grafana ingår i Docker Compose-stacken och laddas automatiskt med en färdig dashboard.
+Grafana is included in the Docker Compose stack and is automatically provisioned with a pre-built dashboard.
 
-### Starta
+### Start
 
 ```bash
 docker compose up -d
 ```
 
-### Öppna dashboarden
+### Open the dashboard
 
-Grafana körs på samma maskin som servern. Ersätt `<server-ip>` med serverns IP-adress:
+Grafana runs on the same machine as the server. Replace `<server-ip>` with the server's IP address:
 
 ```
 http://<server-ip>:3000
 ```
 
-Logga in med användare `admin` och lösenord `admin`, klicka sedan på **Dashboards → Browse** och välj **eBPF Policy Overview**.
+Log in with username `admin` and password `admin`, then navigate to **Dashboards → Browse** and select **eBPF Policy Overview**.
 
-> Om du kör allt lokalt kan du använda `http://localhost:3000`.
+> If running everything locally you can use `http://localhost:3000`.
 
-Dashboarden laddas automatiskt via provisioning från `grafana/dashboards/ebpf-policy-overview.json`. Inget manuellt steg krävs.
+The dashboard is loaded automatically via provisioning from `grafana/dashboards/ebpf-policy-overview.json`. No manual steps are required.
 
-### Felsökning
+### Troubleshooting
 
-Om dashboarden inte syns:
+If the dashboard does not appear:
 
 ```bash
-# Kontrollera att containrarna kör
+# Check that the containers are running
 docker compose ps
 
-# Se loggar
+# View logs
 docker compose logs grafana
 
-# Starta om Grafana
+# Restart Grafana
 docker compose restart grafana
 ```
 
-Om containrarna inte startar alls:
+If the containers fail to start:
 
 ```bash
 docker compose down -v
@@ -492,46 +515,49 @@ The database is created automatically on server startup. TimescaleDB uses hypert
 **`policy_rules`**
 
 ```sql
-id          INTEGER PRIMARY KEY
-name        TEXT
-threshold   INTEGER
-action      TEXT        -- "block" or "ratelimit"
-duration    INTEGER     -- seconds
-tag         TEXT        -- empty = global rule
-created_at  DATETIME
+id          SERIAL PRIMARY KEY
+name        TEXT        NOT NULL
+threshold   INTEGER     NOT NULL
+action      TEXT        NOT NULL    -- "block" or "ratelimit"
+duration    INTEGER     NOT NULL    -- seconds
+tag         TEXT        NOT NULL DEFAULT ''   -- empty = global rule
+created_at  TIMESTAMPTZ DEFAULT NOW()
 ```
 
-**`client_stats`** — per-IP traffic metrics from agents
+**`client_stats`** — per-IP traffic metrics from agents (hypertable in TimescaleDB)
 
 ```sql
-id             INTEGER PRIMARY KEY
-agent_id       TEXT
-ip             TEXT
-req_per_sec    INTEGER
-blocked        INTEGER     -- 1 = blocked, 0 = allowed
-passed         INTEGER     -- packets allowed through
-avg_latency_us REAL        -- microseconds
-min_latency_us REAL
-max_latency_us REAL
-recorded_at    DATETIME
+time           TIMESTAMPTZ NOT NULL    -- hypertable partition key
+agent_id       TEXT        NOT NULL
+ip             INET        NOT NULL
+req_per_sec    INTEGER     NOT NULL
+blocked        INTEGER     NOT NULL    -- 1 = currently blocked, 0 = not blocked
+rate_limited   INTEGER     NOT NULL    -- 1 = rate-limited, 0 = not rate-limited
+passed         INTEGER     NOT NULL    -- packets allowed through
+avg_latency_us REAL        DEFAULT 0   -- microseconds
+min_latency_us REAL        DEFAULT 0
+max_latency_us REAL        DEFAULT 0
 ```
 
-**`system_metrics`** — agent system performance
+Indexes: `(ip, time DESC)`, `(agent_id, time DESC)`
+
+**`system_metrics`** — agent system performance (hypertable in TimescaleDB)
 
 ```sql
-id               INTEGER PRIMARY KEY
-agent_id         TEXT
-cpu_percent      REAL
-memory_percent   REAL
-memory_used_mb   INTEGER
-memory_total_mb  INTEGER
-disk_used_gb     INTEGER
-disk_total_gb    INTEGER
-disk_percent     REAL
-net_bytes_sent   INTEGER
-net_bytes_recv   INTEGER
-recorded_at      DATETIME
+time             TIMESTAMPTZ NOT NULL    -- hypertable partition key
+agent_id         TEXT        NOT NULL
+cpu_percent      REAL        NOT NULL
+memory_percent   REAL        NOT NULL
+memory_used_mb   INTEGER     NOT NULL
+memory_total_mb  INTEGER     NOT NULL
+disk_used_gb     INTEGER     NOT NULL
+disk_total_gb    INTEGER     NOT NULL
+disk_percent     REAL        NOT NULL
+net_bytes_sent   BIGINT      NOT NULL
+net_bytes_recv   BIGINT      NOT NULL
 ```
+
+Index: `(agent_id, time DESC)`
 
 ---
 
@@ -541,8 +567,9 @@ recorded_at      DATETIME
 |------------|-------|
 | [cilium/ebpf](https://github.com/cilium/ebpf) | Loads and manages eBPF programs from Go |
 | [NATS](https://nats.io) | Distributed pub/sub messaging (JetStream) |
-| [Gin](https://github.com/gin-gonic/gin) | HTTP framework for the REST API |
+| Go stdlib `net/http` | HTTP server and REST API routing |
 | [TimescaleDB](https://www.timescale.com) | Time-series PostgreSQL for metrics (default) |
 | [SQLite](https://sqlite.org) | Lightweight fallback database |
-| [gopsutil](https://github.com/shirou/gopsutil) | System metrics collection (CPU, memory, disk, network) |
+| `/proc` + `syscall.Statfs` | Linux-native system metrics (CPU, memory, disk, network I/O) |
+| [Alpine.js](https://alpinejs.dev) + [Tailwind CSS](https://tailwindcss.com) | Reactive web UI (dark theme, served by the server) |
 | eBPF/XDP | Kernel-level packet filtering with minimal overhead |

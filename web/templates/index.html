@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>eBPF Policy Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>[x-cloak]{display:none!important}</style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-sans antialiased" x-data="app()" x-cloak>
+
+  <!-- ── Header ────────────────────────────────────────────────── -->
+  <header class="bg-gray-900 border-b border-gray-800 sticky top-0 z-10">
+    <div class="max-w-6xl mx-auto px-6 py-3 flex items-center gap-6">
+
+      <!-- Logo -->
+      <div class="flex items-center gap-2.5 flex-shrink-0">
+        <div class="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+        </div>
+        <span class="text-sm font-semibold text-white">eBPF Policy</span>
+      </div>
+
+      <!-- Tabs -->
+      <nav class="flex items-center gap-1 flex-1">
+        <template x-for="t in [{id:'rules',label:'Rules'},{id:'traffic',label:'Traffic'},{id:'system',label:'System'}]" :key="t.id">
+          <button @click="tab = t.id"
+            :class="tab === t.id
+              ? 'bg-gray-800 text-white'
+              : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'"
+            class="text-sm px-3 py-1.5 rounded-md transition-colors font-medium"
+            x-text="t.label">
+          </button>
+        </template>
+      </nav>
+
+      <!-- Right: health + new rule -->
+      <div class="flex items-center gap-3 flex-shrink-0">
+        <div class="flex items-center gap-1.5 text-xs"
+             :class="health === true ? 'text-green-400' : health === false ? 'text-red-400' : 'text-gray-600'">
+          <span class="w-1.5 h-1.5 rounded-full"
+                :class="health === true ? 'bg-green-400' : health === false ? 'bg-red-400' : 'bg-gray-600'"></span>
+          <span x-text="health === true ? 'Online' : health === false ? 'Offline' : '...'"></span>
+        </div>
+        <button x-show="tab === 'rules'" @click="openCreate()"
+          class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          New Rule
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Flash notification ─────────────────────────────────────── -->
+  <div class="max-w-6xl mx-auto px-6 pt-4">
+    <div x-show="flash.msg"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 -translate-y-1"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         :class="flash.ok ? 'bg-green-900/40 border-green-700/50 text-green-300' : 'bg-red-900/40 border-red-700/50 text-red-300'"
+         class="flex items-center gap-2 border rounded-lg px-4 py-2.5 text-sm">
+      <svg x-show="flash.ok" class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+      </svg>
+      <svg x-show="!flash.ok" class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+      <span x-text="flash.msg"></span>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- TAB: Rules                                                   -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <main x-show="tab === 'rules'" class="max-w-6xl mx-auto px-6 py-6">
+
+    <div class="mb-4 text-sm text-gray-500"
+         x-text="rules.length + ' rule' + (rules.length !== 1 ? 's' : '') + ' configured'"></div>
+
+    <!-- Loading -->
+    <div x-show="rulesLoading" class="text-center py-20 text-gray-600 text-sm">Loading...</div>
+
+    <!-- Empty state -->
+    <div x-show="!rulesLoading && rules.length === 0"
+         class="text-center py-20 border border-dashed border-gray-800 rounded-xl">
+      <svg class="w-10 h-10 text-gray-700 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+          d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+      </svg>
+      <p class="text-gray-400 font-medium mb-1">No rules configured</p>
+      <p class="text-gray-600 text-sm mb-5">Create a policy rule to start enforcing traffic limits.</p>
+      <button @click="openCreate()"
+        class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+        Create first rule
+      </button>
+    </div>
+
+    <!-- Table -->
+    <div x-show="!rulesLoading && rules.length > 0"
+         class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-800">
+            <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Name</th>
+            <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Threshold</th>
+            <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Action</th>
+            <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Duration</th>
+            <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Environment</th>
+            <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Created</th>
+            <th class="px-4 py-3 w-20"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-800/70">
+          <template x-for="rule in rules" :key="rule.id">
+            <tr class="hover:bg-gray-800/40 transition-colors group">
+              <td class="px-6 py-3.5 font-medium text-white" x-text="rule.name"></td>
+              <td class="px-4 py-3.5 font-mono text-gray-300">
+                <span x-text="rule.threshold"></span>
+                <span class="text-gray-600 text-xs ml-1">req/s</span>
+              </td>
+              <td class="px-4 py-3.5">
+                <span x-show="rule.action === 'block'"
+                  class="inline-flex items-center gap-1.5 bg-red-900/30 text-red-400 border border-red-800/40 text-xs font-medium px-2 py-0.5 rounded-full">
+                  <span class="w-1.5 h-1.5 bg-red-400 rounded-full"></span>Block
+                </span>
+                <span x-show="rule.action !== 'block'"
+                  class="inline-flex items-center gap-1.5 bg-yellow-900/30 text-yellow-400 border border-yellow-800/40 text-xs font-medium px-2 py-0.5 rounded-full">
+                  <span class="w-1.5 h-1.5 bg-yellow-400 rounded-full"></span>Rate Limit
+                </span>
+              </td>
+              <td class="px-4 py-3.5 text-gray-400 text-xs font-mono">
+                <span x-show="rule.duration" x-text="rule.duration + 's'"></span>
+                <span x-show="!rule.duration" class="text-gray-600">—</span>
+              </td>
+              <td class="px-4 py-3.5">
+                <span x-show="rule.tag"
+                  class="bg-blue-900/30 text-blue-400 border border-blue-800/40 text-xs font-medium px-2 py-0.5 rounded-full"
+                  x-text="rule.tag"></span>
+                <span x-show="!rule.tag" class="text-gray-600 text-xs">Global</span>
+              </td>
+              <td class="px-4 py-3.5 text-gray-500 text-xs" x-text="fmtDate(rule.created_at)"></td>
+              <td class="px-4 py-3.5">
+                <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button @click="openEdit(rule)"
+                    class="p-1.5 text-gray-500 hover:text-white hover:bg-gray-700 rounded-md transition-colors"
+                    title="Edit">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                  </button>
+                  <button @click="openDelete(rule)"
+                    class="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-950/50 rounded-md transition-colors"
+                    title="Delete">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- TAB: Traffic Metrics                                         -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <main x-show="tab === 'traffic'" class="max-w-6xl mx-auto px-6 py-6 space-y-6">
+
+    <!-- Top Clients ─────────────────────────────────────────────── -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-white">Top Clients</h2>
+          <p class="text-xs text-gray-500 mt-0.5">GET /api/metrics/top</p>
+        </div>
+        <span class="text-xs text-gray-600 font-mono" x-text="top.count !== null ? top.count + ' results' : ''"></span>
+      </div>
+      <div class="px-5 py-4 border-b border-gray-800 flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Limit</label>
+          <input type="number" x-model.number="top.params.limit" min="1" max="100"
+            class="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Time Range</label>
+          <select x-model="top.params.timerange"
+            class="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <option value="30m">30m</option>
+            <option value="1h">1h</option>
+            <option value="6h">6h</option>
+            <option value="24h">24h</option>
+            <option value="7d">7d</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Order By</label>
+          <select x-model="top.params.order_by"
+            class="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <option value="req_per_sec">Req/s</option>
+            <option value="blocked">Blocked</option>
+            <option value="rate_limited">Rate Limited</option>
+          </select>
+        </div>
+        <button @click="fetchTop()"
+          :disabled="top.loading"
+          class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+          <svg x-show="top.loading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          Query
+        </button>
+        <p x-show="top.error" x-text="top.error" class="text-xs text-red-400"></p>
+      </div>
+      <div x-show="top.results.length > 0">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-800">
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-5 py-2.5">#</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">IP</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Avg Req/s</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Max Req/s</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Blocked</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Rate Ltd</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Passed</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Samples</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800/70">
+            <template x-for="(row, i) in top.results" :key="row.ip">
+              <tr class="hover:bg-gray-800/30 transition-colors">
+                <td class="px-5 py-3 text-gray-600 text-xs font-mono" x-text="i + 1"></td>
+                <td class="px-4 py-3 font-mono text-blue-400 text-xs" x-text="row.ip"></td>
+                <td class="px-4 py-3 font-mono text-gray-300 text-xs" x-text="row.avg_req_per_sec?.toFixed(1)"></td>
+                <td class="px-4 py-3 font-mono text-gray-300 text-xs" x-text="row.max_req_per_sec?.toFixed(1)"></td>
+                <td class="px-4 py-3 text-xs">
+                  <span :class="row.total_blocked > 0 ? 'text-red-400 font-medium' : 'text-gray-500'" x-text="row.total_blocked"></span>
+                </td>
+                <td class="px-4 py-3 text-xs">
+                  <span :class="row.total_rate_limited > 0 ? 'text-yellow-400 font-medium' : 'text-gray-500'" x-text="row.total_rate_limited"></span>
+                </td>
+                <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="row.total_passed"></td>
+                <td class="px-4 py-3 text-gray-600 text-xs font-mono" x-text="row.total_records"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <div x-show="top.count === 0" class="px-5 py-8 text-center text-sm text-gray-600">No data for this period.</div>
+    </section>
+
+    <!-- Search ──────────────────────────────────────────────────── -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-white">Search Traffic</h2>
+          <p class="text-xs text-gray-500 mt-0.5">GET /api/metrics/search</p>
+        </div>
+        <span class="text-xs text-gray-600 font-mono" x-text="search.count !== null ? search.count + ' results' : ''"></span>
+      </div>
+      <div class="px-5 py-4 border-b border-gray-800 flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">IP <span class="text-gray-700">(optional)</span></label>
+          <input type="text" x-model="search.params.ip" placeholder="192.168.1.1"
+            class="w-36 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Agent <span class="text-gray-700">(optional)</span></label>
+          <input type="text" x-model="search.params.agent" placeholder="prod-agent-1"
+            class="w-36 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Limit</label>
+          <input type="number" x-model.number="search.params.limit" min="1" max="500"
+            class="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Offset</label>
+          <input type="number" x-model.number="search.params.offset" min="0"
+            class="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <button @click="fetchSearch()"
+          :disabled="search.loading"
+          class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+          <svg x-show="search.loading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          Search
+        </button>
+        <p x-show="search.error" x-text="search.error" class="text-xs text-red-400"></p>
+      </div>
+      <div x-show="search.results.length > 0" class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-800">
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-5 py-2.5 whitespace-nowrap">Agent</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">IP</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Req/s</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Blocked</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Rate Ltd</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Passed</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Avg Lat</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Recorded</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800/70">
+            <template x-for="row in search.results" :key="row.recorded_at + row.ip">
+              <tr class="hover:bg-gray-800/30 transition-colors">
+                <td class="px-5 py-3 text-gray-400 text-xs font-mono" x-text="row.agent_id"></td>
+                <td class="px-4 py-3 text-blue-400 text-xs font-mono" x-text="row.ip"></td>
+                <td class="px-4 py-3 text-gray-300 text-xs font-mono" x-text="row.req_per_sec"></td>
+                <td class="px-4 py-3 text-xs">
+                  <span :class="row.blocked > 0 ? 'text-red-400 font-semibold' : 'text-gray-600'" x-text="row.blocked > 0 ? 'Yes' : 'No'"></span>
+                </td>
+                <td class="px-4 py-3 text-xs">
+                  <span :class="row.rate_limited > 0 ? 'text-yellow-400 font-semibold' : 'text-gray-600'" x-text="row.rate_limited > 0 ? 'Yes' : 'No'"></span>
+                </td>
+                <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="row.passed"></td>
+                <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="fmtLatency(row.avg_latency_us)"></td>
+                <td class="px-4 py-3 text-gray-600 text-xs" x-text="fmtDate(row.recorded_at)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <div x-show="search.count === 0" class="px-5 py-8 text-center text-sm text-gray-600">No results found.</div>
+    </section>
+
+    <!-- Aggregated by IP ─────────────────────────────────────────── -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-800">
+        <h2 class="text-sm font-semibold text-white">Aggregated Stats by IP</h2>
+        <p class="text-xs text-gray-500 mt-0.5">GET /api/metrics/aggregated</p>
+      </div>
+      <div class="px-5 py-4 border-b border-gray-800 flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">IP <span class="text-red-500">*</span></label>
+          <input type="text" x-model="agg.params.ip" placeholder="192.168.1.1"
+            class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Time Range</label>
+          <select x-model="agg.params.timerange"
+            class="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <option value="30m">30m</option>
+            <option value="1h">1h</option>
+            <option value="6h">6h</option>
+            <option value="24h">24h</option>
+            <option value="7d">7d</option>
+          </select>
+        </div>
+        <button @click="fetchAgg()"
+          :disabled="agg.loading || !agg.params.ip"
+          class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+          <svg x-show="agg.loading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          Query
+        </button>
+        <p x-show="agg.error" x-text="agg.error" class="text-xs text-red-400"></p>
+      </div>
+      <div x-show="agg.result" class="p-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <template x-for="card in aggCards()" :key="card.label">
+          <div class="bg-gray-800/60 border border-gray-700/50 rounded-lg px-4 py-3">
+            <p class="text-xs text-gray-500 mb-1" x-text="card.label"></p>
+            <p class="text-base font-semibold" :class="card.color || 'text-white'" x-text="card.value"></p>
+          </div>
+        </template>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- TAB: System Metrics                                          -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <main x-show="tab === 'system'" class="max-w-6xl mx-auto px-6 py-6 space-y-6">
+
+    <!-- Recent system metrics ───────────────────────────────────── -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-white">Recent System Metrics</h2>
+          <p class="text-xs text-gray-500 mt-0.5">GET /api/system/metrics</p>
+        </div>
+        <span class="text-xs text-gray-600 font-mono" x-text="sys.count !== null ? sys.count + ' rows' : ''"></span>
+      </div>
+      <div class="px-5 py-4 border-b border-gray-800 flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Agent <span class="text-gray-700">(optional)</span></label>
+          <input type="text" x-model="sys.params.agent" placeholder="prod-agent-1"
+            class="w-36 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Time Range</label>
+          <select x-model="sys.params.timerange"
+            class="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <option value="30m">30m</option>
+            <option value="1h">1h</option>
+            <option value="6h">6h</option>
+            <option value="24h">24h</option>
+            <option value="7d">7d</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Limit</label>
+          <input type="number" x-model.number="sys.params.limit" min="1" max="500"
+            class="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <button @click="fetchSys()"
+          :disabled="sys.loading"
+          class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+          <svg x-show="sys.loading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          Fetch
+        </button>
+        <p x-show="sys.error" x-text="sys.error" class="text-xs text-red-400"></p>
+      </div>
+      <div x-show="sys.results.length > 0" class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-800">
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-5 py-2.5 whitespace-nowrap">Agent</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">CPU</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Memory</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Disk</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Mem Used</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Net Sent</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Net Recv</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Recorded</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800/70">
+            <template x-for="row in sys.results" :key="row.recorded_at + row.agent_id">
+              <tr class="hover:bg-gray-800/30 transition-colors">
+                <td class="px-5 py-3 text-gray-400 text-xs font-mono" x-text="row.agent_id"></td>
+                <td class="px-4 py-3 text-xs">
+                  <span :class="pctColor(row.cpu_percent)" x-text="row.cpu_percent?.toFixed(1) + '%'"></span>
+                </td>
+                <td class="px-4 py-3 text-xs">
+                  <span :class="pctColor(row.memory_percent)" x-text="row.memory_percent?.toFixed(1) + '%'"></span>
+                </td>
+                <td class="px-4 py-3 text-xs">
+                  <span :class="pctColor(row.disk_percent)" x-text="row.disk_percent?.toFixed(1) + '%'"></span>
+                </td>
+                <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="row.memory_used_mb + ' / ' + row.memory_total_mb + ' MB'"></td>
+                <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="fmtBytes(row.net_bytes_sent)"></td>
+                <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="fmtBytes(row.net_bytes_recv)"></td>
+                <td class="px-4 py-3 text-gray-600 text-xs" x-text="fmtDate(row.recorded_at)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <div x-show="sys.count === 0" class="px-5 py-8 text-center text-sm text-gray-600">No results found.</div>
+    </section>
+
+    <!-- Aggregated system metrics ───────────────────────────────── -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-800">
+        <h2 class="text-sm font-semibold text-white">Aggregated System Metrics</h2>
+        <p class="text-xs text-gray-500 mt-0.5">GET /api/system/metrics/aggregated</p>
+      </div>
+      <div class="px-5 py-4 border-b border-gray-800 flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Agent <span class="text-red-500">*</span></label>
+          <input type="text" x-model="sysAgg.params.agent" placeholder="prod-agent-1"
+            class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Time Range</label>
+          <select x-model="sysAgg.params.timerange"
+            class="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <option value="30m">30m</option>
+            <option value="1h">1h</option>
+            <option value="6h">6h</option>
+            <option value="24h">24h</option>
+            <option value="7d">7d</option>
+          </select>
+        </div>
+        <button @click="fetchSysAgg()"
+          :disabled="sysAgg.loading || !sysAgg.params.agent"
+          class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+          <svg x-show="sysAgg.loading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          Query
+        </button>
+        <p x-show="sysAgg.error" x-text="sysAgg.error" class="text-xs text-red-400"></p>
+      </div>
+      <div x-show="sysAgg.result" class="p-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <template x-for="card in sysAggCards()" :key="card.label">
+          <div class="bg-gray-800/60 border border-gray-700/50 rounded-lg px-4 py-3">
+            <p class="text-xs text-gray-500 mb-1" x-text="card.label"></p>
+            <p class="text-base font-semibold" :class="card.color || 'text-white'" x-text="card.value"></p>
+          </div>
+        </template>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── Create / Edit modal ───────────────────────────────────── -->
+  <div x-show="showModal"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 flex items-center justify-center p-4"
+       @keydown.escape.window="showModal = false">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showModal = false"></div>
+    <div x-show="showModal"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95 translate-y-2"
+         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         class="relative bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md">
+      <div class="px-6 py-5 border-b border-gray-800 flex items-start justify-between">
+        <div>
+          <h2 class="text-base font-semibold text-white" x-text="editMode ? 'Edit Rule' : 'New Rule'"></h2>
+          <p class="text-xs text-gray-500 mt-0.5" x-text="editMode ? 'Update the enforcement policy' : 'Configure a new traffic enforcement rule'"></p>
+        </div>
+        <button @click="showModal = false" class="text-gray-600 hover:text-gray-300 p-1 rounded-md transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="px-6 py-5 space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">Rule Name</label>
+          <input type="text" x-model="form.name" x-ref="nameInput" placeholder="e.g. Block high-volume IPs"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600
+                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">Threshold <span class="text-gray-600 font-normal">(req/s)</span></label>
+            <input type="number" x-model.number="form.threshold" min="1" placeholder="500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">Action</label>
+            <select x-model="form.action"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+              <option value="block">Block</option>
+              <option value="rate_limit">Rate Limit</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid gap-3" :class="form.action === 'block' ? 'grid-cols-2' : 'grid-cols-1'">
+          <div x-show="form.action === 'block'"
+               x-transition:enter="transition ease-out duration-150"
+               x-transition:enter-start="opacity-0 -translate-x-1"
+               x-transition:enter-end="opacity-100 translate-x-0"
+               x-transition:leave="transition ease-in duration-100"
+               x-transition:leave-start="opacity-100"
+               x-transition:leave-end="opacity-0">
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">Duration <span class="text-gray-600 font-normal">(seconds)</span></label>
+            <input type="number" x-model.number="form.duration" min="1" placeholder="60"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">Environment <span class="text-gray-600 font-normal">(optional)</span></label>
+            <input type="text" x-model="form.tag" placeholder="e.g. production"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+          </div>
+        </div>
+        <div x-show="form.action === 'rate_limit'"
+             x-transition:enter="transition ease-out duration-150"
+             x-transition:enter-start="opacity-0 translate-y-1"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             class="flex items-center gap-2 bg-yellow-900/20 border border-yellow-800/30 rounded-lg px-3 py-2.5 text-xs text-yellow-500">
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Rate limiting is continuous — no block duration needed.
+        </div>
+        <p x-show="errorMsg" x-text="errorMsg"
+           class="text-sm text-red-400 bg-red-950/40 border border-red-900/40 rounded-lg px-3 py-2"></p>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-800 flex items-center justify-end gap-3">
+        <button @click="showModal = false"
+          class="text-sm text-gray-400 hover:text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors">Cancel</button>
+        <button @click="saveRule()"
+          :disabled="saving || !form.name || !form.threshold || (form.action === 'block' && !form.duration)"
+          class="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed
+                 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          <svg x-show="saving" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span x-text="editMode ? 'Save Changes' : 'Create Rule'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Delete confirmation modal ─────────────────────────────── -->
+  <div x-show="showDelete"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 flex items-center justify-center p-4"
+       @keydown.escape.window="showDelete = false">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showDelete = false"></div>
+    <div x-show="showDelete"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         class="relative bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm p-6">
+      <div class="flex items-start gap-4 mb-6">
+        <div class="w-10 h-10 bg-red-950/60 border border-red-900/40 rounded-full flex items-center justify-center flex-shrink-0">
+          <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-white">Delete rule?</h3>
+          <p class="text-sm text-gray-400 mt-1">
+            <span class="text-white font-medium" x-text="deleteTarget?.name"></span>
+            will be permanently removed. Agents are notified immediately.
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-3">
+        <button @click="showDelete = false"
+          class="text-sm text-gray-400 hover:text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors">Cancel</button>
+        <button @click="deleteRule()" :disabled="saving"
+          class="flex items-center gap-2 bg-red-700 hover:bg-red-600 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          <svg x-show="saving" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Alpine.js ─────────────────────────────────────────────── -->
+  <script>
+  function app() {
+    return {
+      tab:          'rules',
+      health:       null,
+
+      // rules list
+      rules:        [],
+      rulesLoading: false,
+
+      // rule form
+      showModal:    false,
+      showDelete:   false,
+      editMode:     false,
+      saving:       false,
+      errorMsg:     '',
+      currentRule:  null,
+      deleteTarget: null,
+      flash:        { msg: '', ok: true },
+      form:         { name: '', threshold: 100, action: 'block', duration: 60, tag: '' },
+
+      // traffic — top clients
+      top:    { loading: false, results: [], count: null, error: '', params: { limit: 10, timerange: '1h', order_by: 'req_per_sec' } },
+
+      // traffic — search
+      search: { loading: false, results: [], count: null, error: '', params: { ip: '', agent: '', limit: 50, offset: 0 } },
+
+      // traffic — aggregated by IP
+      agg:    { loading: false, result: null, error: '', params: { ip: '', timerange: '1h' } },
+
+      // system — recent
+      sys:    { loading: false, results: [], count: null, error: '', params: { agent: '', timerange: '1h', limit: 50 } },
+
+      // system — aggregated
+      sysAgg: { loading: false, result: null, error: '', params: { agent: '', timerange: '1h' } },
+
+      init() {
+        this.checkHealth();
+        this.loadRules();
+      },
+
+      async loadRules() {
+        this.rulesLoading = true;
+        try {
+          const res    = await fetch('/api/rules');
+          const data   = await res.json();
+          this.rules   = Array.isArray(data) ? data : [];
+        } catch {
+          this.rules = [];
+        } finally {
+          this.rulesLoading = false;
+        }
+      },
+
+      async checkHealth() {
+        try {
+          const res  = await fetch('/health');
+          this.health = res.ok;
+        } catch {
+          this.health = false;
+        }
+      },
+
+      // ── Rules ────────────────────────────────────────────────────
+
+      openCreate() {
+        this.editMode = false;
+        this.errorMsg = '';
+        this.form = { name: '', threshold: 100, action: 'block', duration: 60, tag: '' };
+        this.showModal = true;
+        this.$nextTick(() => this.$refs.nameInput?.focus());
+      },
+
+      openEdit(rule) {
+        this.editMode    = true;
+        this.currentRule = rule;
+        this.errorMsg    = '';
+        this.form = { name: rule.name, threshold: rule.threshold, action: rule.action, duration: rule.duration, tag: rule.tag || '' };
+        this.showModal = true;
+        this.$nextTick(() => this.$refs.nameInput?.focus());
+      },
+
+      openDelete(rule) {
+        this.deleteTarget = rule;
+        this.showDelete   = true;
+      },
+
+      async saveRule() {
+        if (!this.form.name || !this.form.threshold) return;
+        if (this.form.action === 'block' && !this.form.duration) return;
+        this.saving = true; this.errorMsg = '';
+        const url    = this.editMode ? `/api/rules/${this.currentRule.id}` : '/api/rules';
+        const method = this.editMode ? 'PUT' : 'POST';
+        const payload = { ...this.form };
+        if (payload.action !== 'block') payload.duration = 0;
+        try {
+          const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          if (res.ok) {
+            this.showModal = false;
+            this.showFlash(this.editMode ? 'Rule updated.' : 'Rule created.', true);
+            await this.loadRules();
+          } else {
+            const d = await res.json().catch(() => ({}));
+            this.errorMsg = d.error || 'Something went wrong.';
+          }
+        } catch { this.errorMsg = 'Network error.'; }
+        finally  { this.saving = false; }
+      },
+
+      async deleteRule() {
+        this.saving = true;
+        try {
+          const res = await fetch(`/api/rules/${this.deleteTarget.id}`, { method: 'DELETE' });
+          if (res.ok) {
+            this.showDelete = false;
+            this.showFlash(`"${this.deleteTarget.name}" deleted.`, true);
+            await this.loadRules();
+          }
+        } catch {}
+        finally { this.saving = false; }
+      },
+
+      showFlash(msg, ok) {
+        this.flash = { msg, ok };
+        setTimeout(() => { this.flash = { msg: '', ok: true }; }, 3500);
+      },
+
+      // ── Traffic endpoints ─────────────────────────────────────────
+
+      async fetchTop() {
+        this.top.loading = true; this.top.error = '';
+        const p = this.top.params;
+        try {
+          const res  = await fetch(`/api/metrics/top?limit=${p.limit}&timerange=${p.timerange}&order_by=${p.order_by}`);
+          const data = await res.json();
+          if (!res.ok) { this.top.error = data.error || 'Error'; return; }
+          this.top.results = data.results || [];
+          this.top.count   = data.count ?? 0;
+        } catch { this.top.error = 'Network error.'; }
+        finally  { this.top.loading = false; }
+      },
+
+      async fetchSearch() {
+        this.search.loading = true; this.search.error = '';
+        const p = this.search.params;
+        const qs = new URLSearchParams({ ip: p.ip, agent: p.agent, limit: p.limit, offset: p.offset });
+        try {
+          const res  = await fetch(`/api/metrics/search?${qs}`);
+          const data = await res.json();
+          if (!res.ok) { this.search.error = data.error || 'Error'; return; }
+          this.search.results = data.results || [];
+          this.search.count   = data.count ?? 0;
+        } catch { this.search.error = 'Network error.'; }
+        finally  { this.search.loading = false; }
+      },
+
+      async fetchAgg() {
+        if (!this.agg.params.ip) return;
+        this.agg.loading = true; this.agg.error = ''; this.agg.result = null;
+        const p = this.agg.params;
+        try {
+          const res  = await fetch(`/api/metrics/aggregated?ip=${encodeURIComponent(p.ip)}&timerange=${p.timerange}`);
+          const data = await res.json();
+          if (!res.ok) { this.agg.error = data.error || 'Error'; return; }
+          this.agg.result = data;
+        } catch { this.agg.error = 'Network error.'; }
+        finally  { this.agg.loading = false; }
+      },
+
+      aggCards() {
+        const d = this.agg.result;
+        if (!d) return [];
+        return [
+          { label: 'IP',           value: d.ip },
+          { label: 'Time Range',   value: d.timerange },
+          { label: 'Samples',      value: d.total_records },
+          { label: 'Avg Req/s',    value: d.avg_req_per_sec?.toFixed(1) },
+          { label: 'Max Req/s',    value: d.max_req_per_sec, color: 'text-orange-400' },
+          { label: 'Min Req/s',    value: d.min_req_per_sec },
+          { label: 'Blocked',      value: d.total_blocked,       color: d.total_blocked > 0 ? 'text-red-400' : 'text-gray-300' },
+          { label: 'Rate Limited', value: d.total_rate_limited,  color: d.total_rate_limited > 0 ? 'text-yellow-400' : 'text-gray-300' },
+          { label: 'Passed',       value: d.total_passed,        color: 'text-green-400' },
+          { label: 'Avg Latency',  value: this.fmtLatency(d.avg_latency_us) },
+          { label: 'Min Latency',  value: this.fmtLatency(d.min_latency_us) },
+          { label: 'Max Latency',  value: this.fmtLatency(d.max_latency_us) },
+          { label: 'First Seen',   value: this.fmtDate(d.first_seen) },
+          { label: 'Last Seen',    value: this.fmtDate(d.last_seen) },
+        ];
+      },
+
+      // ── System endpoints ──────────────────────────────────────────
+
+      async fetchSys() {
+        this.sys.loading = true; this.sys.error = '';
+        const p = this.sys.params;
+        const qs = new URLSearchParams({ agent: p.agent, timerange: p.timerange, limit: p.limit });
+        try {
+          const res  = await fetch(`/api/system/metrics?${qs}`);
+          const data = await res.json();
+          if (!res.ok) { this.sys.error = data.error || 'Error'; return; }
+          this.sys.results = data.results || [];
+          this.sys.count   = data.count ?? 0;
+        } catch { this.sys.error = 'Network error.'; }
+        finally  { this.sys.loading = false; }
+      },
+
+      async fetchSysAgg() {
+        if (!this.sysAgg.params.agent) return;
+        this.sysAgg.loading = true; this.sysAgg.error = ''; this.sysAgg.result = null;
+        const p = this.sysAgg.params;
+        try {
+          const res  = await fetch(`/api/system/metrics/aggregated?agent=${encodeURIComponent(p.agent)}&timerange=${p.timerange}`);
+          const data = await res.json();
+          if (!res.ok) { this.sysAgg.error = data.error || 'Error'; return; }
+          this.sysAgg.result = data;
+        } catch { this.sysAgg.error = 'Network error.'; }
+        finally  { this.sysAgg.loading = false; }
+      },
+
+      sysAggCards() {
+        const d = this.sysAgg.result;
+        if (!d) return [];
+        return [
+          { label: 'Agent',      value: d.agent_id },
+          { label: 'Time Range', value: d.timerange },
+          { label: 'Samples',    value: d.total_records },
+          { label: 'Avg CPU',    value: d.avg_cpu_percent?.toFixed(1) + '%',  color: this.pctColor(d.avg_cpu_percent) },
+          { label: 'Max CPU',    value: d.max_cpu_percent?.toFixed(1) + '%',  color: this.pctColor(d.max_cpu_percent) },
+          { label: 'Avg Memory', value: d.avg_memory_percent?.toFixed(1) + '%', color: this.pctColor(d.avg_memory_percent) },
+          { label: 'Max Memory', value: d.max_memory_percent?.toFixed(1) + '%', color: this.pctColor(d.max_memory_percent) },
+          { label: 'Avg Disk',   value: d.avg_disk_percent?.toFixed(1) + '%', color: this.pctColor(d.avg_disk_percent) },
+          { label: 'Max Disk',   value: d.max_disk_percent?.toFixed(1) + '%', color: this.pctColor(d.max_disk_percent) },
+          { label: 'Net Sent',   value: this.fmtBytes(d.total_bytes_sent) },
+          { label: 'Net Recv',   value: this.fmtBytes(d.total_bytes_recv) },
+        ];
+      },
+
+      // ── Helpers ──────────────────────────────────────────────────
+
+      fmtDate(iso) {
+        if (!iso) return '—';
+        return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+      },
+
+      fmtLatency(us) {
+        if (us == null) return '—';
+        if (us < 1000) return us.toFixed(1) + ' µs';
+        return (us / 1000).toFixed(2) + ' ms';
+      },
+
+      fmtBytes(b) {
+        if (b == null) return '—';
+        if (b < 1024)       return b + ' B';
+        if (b < 1048576)    return (b / 1024).toFixed(1) + ' KB';
+        if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+        return (b / 1073741824).toFixed(2) + ' GB';
+      },
+
+      pctColor(pct) {
+        if (pct == null) return 'text-gray-300';
+        if (pct >= 85)   return 'text-red-400';
+        if (pct >= 60)   return 'text-yellow-400';
+        return 'text-green-400';
+      },
+    };
+  }
+  </script>
+</body>
+</html>

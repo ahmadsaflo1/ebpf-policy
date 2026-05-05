@@ -65,6 +65,11 @@ func main() {
 
 	// Track previous counts to calculate req/s delta between ticks.
 	prevCounts := make(map[string]uint64)
+	// Track which IPs were blocked last tick to detect when a block expires.
+	prevBlocked := make(map[string]bool)
+	// Track the rate (tokens/s) currently configured in eBPF per IP.
+	// A value of 0 means no rate limit is active for that IP.
+	activeRateLimits := make(map[string]int)
 
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
@@ -88,41 +93,61 @@ func main() {
 				reqPerSec := int(diff) / 10
 
 				ip := net.ParseIP(ipStr)
-				rule := store.Match(reqPerSec)
 				isBlocked := program.IsBlocked(ip)
+				wasBlocked := prevBlocked[ipStr]
+				prevBlocked[ipStr] = isBlocked
+
+				rule := store.Match(reqPerSec)
 
 				if isBlocked {
 					if rule != nil && rule.Action == "block" {
-						// Still high traffic — extend the block
+						// Still high traffic while blocked — extend the block
 						duration := time.Duration(rule.Duration) * time.Second
 						program.BlockIP(ip, duration)
 						log.Printf("IP %s still active (%d req/s) — extending block\n",
 							ipStr, reqPerSec)
-					} else {
-						// Traffic calmed down — unblock
-						program.UnblockIP(ip)
-						log.Printf("IP %s calmed down (%d req/s) — unblocking\n",
-							ipStr, reqPerSec)
 					}
-				} else if rule != nil {
-					if rule.Action == "block" {
-						// Exceeds DDoS threshold — block for X seconds
+					// Block expires automatically via eBPF block_list timestamp.
+				} else if wasBlocked {
+					// Block just expired — re-evaluate real traffic now that
+					// XDP is passing packets again.
+					if rule != nil && rule.Action == "block" {
 						duration := time.Duration(rule.Duration) * time.Second
 						program.BlockIP(ip, duration)
-						log.Printf("IP %s exceeds limit (%d req/s) — blocking for %ds!\n",
+						log.Printf("IP %s re-evaluated after block: still %d req/s — re-blocking for %ds!\n",
 							ipStr, reqPerSec, rule.Duration)
-					} else if rule.Action == "ratelimit" {
-						// Exceeds rate limit — token bucket in eBPF handles dropping
-						log.Printf("IP %s is being rate limited (%d req/s)\n",
+					} else {
+						log.Printf("IP %s re-evaluated after block: %d req/s — unblocked\n",
 							ipStr, reqPerSec)
 					}
+				} else if rule != nil && rule.Action == "block" {
+					// Exceeds DDoS threshold — block for X seconds
+					duration := time.Duration(rule.Duration) * time.Second
+					program.BlockIP(ip, duration)
+					log.Printf("IP %s exceeds limit (%d req/s) — blocking for %ds!\n",
+						ipStr, reqPerSec, rule.Duration)
+				} else if rule != nil && rule.Action == "rate_limit" {
+					// Apply or update the per-IP token bucket rate in eBPF.
+					if activeRateLimits[ipStr] != rule.Threshold {
+						program.SetRateLimit(ip, uint64(rule.Threshold))
+						activeRateLimits[ipStr] = rule.Threshold
+						log.Printf("IP %s rate limited to %d req/s (traffic: %d req/s)\n",
+							ipStr, rule.Threshold, reqPerSec)
+					}
+				} else if activeRateLimits[ipStr] != 0 {
+					// No rule matches any more — remove rate limit from eBPF.
+					program.RemoveRateLimit(ip)
+					delete(activeRateLimits, ipStr)
+					log.Printf("IP %s rate limit removed (%d req/s — below threshold)\n",
+						ipStr, reqPerSec)
 				}
 
 				clientStat := models.ClientStats{
-					IP:        ipStr,
-					ReqPerSec: reqPerSec,
-					Blocked:   boolToInt(isBlocked),
-					Passed:    int(diff),
+					IP:          ipStr,
+					ReqPerSec:   reqPerSec,
+					Blocked:     boolToInt(isBlocked),
+					RateLimited: boolToInt(activeRateLimits[ipStr] != 0),
+					Passed:      int(diff),
 				}
 
 				// Add latency metrics if available

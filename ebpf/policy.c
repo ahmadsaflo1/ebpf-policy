@@ -4,8 +4,10 @@
  * For each incoming IPv4 packet the program:
  *   1. Drops the packet immediately if src_ip is in block_list and the entry
  *      has not yet expired (expiry is a ktime_get_ns timestamp).
- *   2. Applies a token-bucket rate limiter (100 tok/s, burst 200) stored in
- *      rate_limit_map; drops the packet when the bucket is empty.
+ *   2. If the IP has an entry in rate_limit_config_map, applies a per-IP
+ *      token-bucket rate limiter using the configured rate (tokens/s) with
+ *      burst = 2x rate. Drops the packet when the bucket is empty. If no
+ *      entry exists the packet is passed without any rate limiting.
  *   3. Increments the cumulative counter in request_count so the Go agent can
  *      calculate req/s and decide whether to extend/add a block.
  *   4. Records per-packet processing latency in latency_map.
@@ -17,11 +19,6 @@
 #include <linux/ip.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
-
-
-// Token bucket constants
-#define RATE_LIMIT   100  // max tokens per second
-#define BUCKET_SIZE  200  // max burst size
 
 // Simple rate-limiting XDP program that tracks the number of requests from each IP address
 struct ip_stats {
@@ -59,7 +56,7 @@ struct {
     __type (value, __u64);
 } block_list SEC(".maps");
 
-// Map 3: rate limit state per IP
+// Map 3: token bucket state per IP (runtime state — tokens + last_refill)
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 10000);
@@ -75,40 +72,53 @@ struct {
     __type(value, struct latency_stats);
 } latency_map SEC(".maps");
 
-// Token bucket — returns XDP_PASS or XDP_DROP
+// Map 5: per-IP rate limit config written by Go agent (value = tokens/sec)
+// Absence of an entry means no rate limiting for that IP.
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 10000);
+    __type(key,   __u32);
+    __type(value, __u64);
+} rate_limit_config_map SEC(".maps");
+
+// Token bucket — returns XDP_PASS or XDP_DROP.
+// Passes immediately if no rate limit is configured for this IP.
 static __always_inline int check_rate_limit(__u32 src_ip, __u64 now)
 {
+    __u64 *rate_ptr = bpf_map_lookup_elem(&rate_limit_config_map, &src_ip);
+    if (!rate_ptr)
+        return XDP_PASS;
+
+    __u64 rate  = *rate_ptr;
+    __u64 burst = rate * 2;
+
     struct rate_limit_state *state;
     struct rate_limit_state new_state;
 
     state = bpf_map_lookup_elem(&rate_limit_map, &src_ip);
 
     if (!state) {
-        // First packet from this IP — create new state
-        new_state.tokens     = BUCKET_SIZE - 1;
+        new_state.tokens      = burst - 1;
         new_state.last_refill = now;
         bpf_map_update_elem(&rate_limit_map, &src_ip, &new_state, BPF_ANY);
         return XDP_PASS;
     }
 
-    // Calculate how many tokens to refill based on elapsed time
     __u64 elapsed    = now - state->last_refill;
-    __u64 new_tokens = (elapsed * RATE_LIMIT) / 1000000000ULL;
+    __u64 new_tokens = (elapsed * rate) / 1000000000ULL;
 
     if (new_tokens > 0) {
         state->tokens += new_tokens;
-        if (state->tokens > BUCKET_SIZE)
-            state->tokens = BUCKET_SIZE;
+        if (state->tokens > burst)
+            state->tokens = burst;
         state->last_refill = now;
     }
 
     if (state->tokens > 0) {
-        // Enough tokens — allow packet
         state->tokens--;
         return XDP_PASS;
     }
 
-    // No tokens left — drop packet silently
     return XDP_DROP;
 }
 
@@ -175,14 +185,8 @@ int policy_filter(struct xdp_md *ctx)
         goto update_stats;
     }
 
-    // Step 2: check rate limit (token bucket)
-    if (check_rate_limit(src_ip, now) == XDP_DROP){
-        action = XDP_DROP;
-        goto update_stats;
-    }
-        
-
-    // Step 3: update request count and last seen time
+    // Step 2: update request count for all packets (including those that will
+    // be dropped) so the Go agent sees actual traffic, not just passed traffic.
     struct ip_stats *stats = bpf_map_lookup_elem(&request_count, &src_ip);
     if (stats) {
         __sync_fetch_and_add(&stats->count, 1);
@@ -190,6 +194,12 @@ int policy_filter(struct xdp_md *ctx)
     } else {
         struct ip_stats new_stats = { .count = 1, .last_seen = now };
         bpf_map_update_elem(&request_count, &src_ip, &new_stats, BPF_ANY);
+    }
+
+    // Step 3: check rate limit (token bucket)
+    if (check_rate_limit(src_ip, now) == XDP_DROP){
+        action = XDP_DROP;
+        goto update_stats;
     }
 
 update_stats:
