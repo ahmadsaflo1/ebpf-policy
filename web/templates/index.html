@@ -212,6 +212,7 @@
             class="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
             <option value="req_per_sec">Req/s</option>
             <option value="blocked">Blocked</option>
+            <option value="rate_limited">Rate Limited</option>
           </select>
         </div>
         <button @click="fetchTop()"
@@ -234,6 +235,7 @@
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Avg Req/s</th>
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Max Req/s</th>
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Blocked</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Rate Ltd</th>
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Passed</th>
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Samples</th>
             </tr>
@@ -247,6 +249,9 @@
                 <td class="px-4 py-3 font-mono text-gray-300 text-xs" x-text="row.max_req_per_sec?.toFixed(1)"></td>
                 <td class="px-4 py-3 text-xs">
                   <span :class="row.total_blocked > 0 ? 'text-red-400 font-medium' : 'text-gray-500'" x-text="row.total_blocked"></span>
+                </td>
+                <td class="px-4 py-3 text-xs">
+                  <span :class="row.total_rate_limited > 0 ? 'text-yellow-400 font-medium' : 'text-gray-500'" x-text="row.total_rate_limited"></span>
                 </td>
                 <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="row.total_passed"></td>
                 <td class="px-4 py-3 text-gray-600 text-xs font-mono" x-text="row.total_records"></td>
@@ -307,6 +312,7 @@
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">IP</th>
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Req/s</th>
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Blocked</th>
+              <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Rate Ltd</th>
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Passed</th>
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">Avg Lat</th>
               <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2.5">Recorded</th>
@@ -320,6 +326,9 @@
                 <td class="px-4 py-3 text-gray-300 text-xs font-mono" x-text="row.req_per_sec"></td>
                 <td class="px-4 py-3 text-xs">
                   <span :class="row.blocked > 0 ? 'text-red-400 font-semibold' : 'text-gray-600'" x-text="row.blocked > 0 ? 'Yes' : 'No'"></span>
+                </td>
+                <td class="px-4 py-3 text-xs">
+                  <span :class="row.rate_limited > 0 ? 'text-yellow-400 font-semibold' : 'text-gray-600'" x-text="row.rate_limited > 0 ? 'Yes' : 'No'"></span>
                 </td>
                 <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="row.passed"></td>
                 <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="fmtLatency(row.avg_latency_us)"></td>
@@ -844,8 +853,9 @@
           { label: 'Avg Req/s',    value: d.avg_req_per_sec?.toFixed(1) },
           { label: 'Max Req/s',    value: d.max_req_per_sec, color: 'text-orange-400' },
           { label: 'Min Req/s',    value: d.min_req_per_sec },
-          { label: 'Blocked',      value: d.total_blocked,   color: d.total_blocked > 0 ? 'text-red-400' : 'text-gray-300' },
-          { label: 'Passed',       value: d.total_passed,    color: 'text-green-400' },
+          { label: 'Blocked',      value: d.total_blocked,       color: d.total_blocked > 0 ? 'text-red-400' : 'text-gray-300' },
+          { label: 'Rate Limited', value: d.total_rate_limited,  color: d.total_rate_limited > 0 ? 'text-yellow-400' : 'text-gray-300' },
+          { label: 'Passed',       value: d.total_passed,        color: 'text-green-400' },
           { label: 'Avg Latency',  value: this.fmtLatency(d.avg_latency_us) },
           { label: 'Min Latency',  value: this.fmtLatency(d.min_latency_us) },
           { label: 'Max Latency',  value: this.fmtLatency(d.max_latency_us) },

@@ -67,6 +67,9 @@ func main() {
 	prevCounts := make(map[string]uint64)
 	// Track which IPs were blocked last tick to detect when a block expires.
 	prevBlocked := make(map[string]bool)
+	// Track the rate (tokens/s) currently configured in eBPF per IP.
+	// A value of 0 means no rate limit is active for that IP.
+	activeRateLimits := make(map[string]int)
 
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
@@ -117,25 +120,34 @@ func main() {
 						log.Printf("IP %s re-evaluated after block: %d req/s — unblocked\n",
 							ipStr, reqPerSec)
 					}
-				} else if rule != nil {
-					if rule.Action == "block" {
-						// Exceeds DDoS threshold — block for X seconds
-						duration := time.Duration(rule.Duration) * time.Second
-						program.BlockIP(ip, duration)
-						log.Printf("IP %s exceeds limit (%d req/s) — blocking for %ds!\n",
-							ipStr, reqPerSec, rule.Duration)
-					} else if rule.Action == "rate_limit" {
-						// Exceeds rate limit — token bucket in eBPF handles dropping
-						log.Printf("IP %s is being rate limited (%d req/s)\n",
-							ipStr, reqPerSec)
+				} else if rule != nil && rule.Action == "block" {
+					// Exceeds DDoS threshold — block for X seconds
+					duration := time.Duration(rule.Duration) * time.Second
+					program.BlockIP(ip, duration)
+					log.Printf("IP %s exceeds limit (%d req/s) — blocking for %ds!\n",
+						ipStr, reqPerSec, rule.Duration)
+				} else if rule != nil && rule.Action == "rate_limit" {
+					// Apply or update the per-IP token bucket rate in eBPF.
+					if activeRateLimits[ipStr] != rule.Threshold {
+						program.SetRateLimit(ip, uint64(rule.Threshold))
+						activeRateLimits[ipStr] = rule.Threshold
+						log.Printf("IP %s rate limited to %d req/s (traffic: %d req/s)\n",
+							ipStr, rule.Threshold, reqPerSec)
 					}
+				} else if activeRateLimits[ipStr] != 0 {
+					// No rule matches any more — remove rate limit from eBPF.
+					program.RemoveRateLimit(ip)
+					delete(activeRateLimits, ipStr)
+					log.Printf("IP %s rate limit removed (%d req/s — below threshold)\n",
+						ipStr, reqPerSec)
 				}
 
 				clientStat := models.ClientStats{
-					IP:        ipStr,
-					ReqPerSec: reqPerSec,
-					Blocked:   boolToInt(isBlocked),
-					Passed:    int(diff),
+					IP:          ipStr,
+					ReqPerSec:   reqPerSec,
+					Blocked:     boolToInt(isBlocked),
+					RateLimited: boolToInt(activeRateLimits[ipStr] != 0),
+					Passed:      int(diff),
 				}
 
 				// Add latency metrics if available

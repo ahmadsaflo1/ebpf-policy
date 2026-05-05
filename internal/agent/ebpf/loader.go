@@ -110,6 +110,24 @@ func (p *PolicyProgram) UnblockIP(ip net.IP) error {
     return p.objs.BlockList.Delete(key)
 }
 
+// SetRateLimit writes a per-IP token-bucket rate into rate_limit_config_map.
+// The eBPF program will enforce ratePerSec tokens/s with burst = 2×ratePerSec
+// for this IP. Calling again with a different rate updates it in place.
+func (p *PolicyProgram) SetRateLimit(ip net.IP, ratePerSec uint64) error {
+    key := ipToUint32(ip)
+    return p.objs.RateLimitConfigMap.Put(key, ratePerSec)
+}
+
+// RemoveRateLimit removes the rate limit config for an IP and clears its
+// token bucket state so it starts fresh if re-added later.
+func (p *PolicyProgram) RemoveRateLimit(ip net.IP) error {
+    key := ipToUint32(ip)
+    // Ignore not-found errors — entry may never have been added.
+    _ = p.objs.RateLimitConfigMap.Delete(key)
+    _ = p.objs.RateLimitMap.Delete(key)
+    return nil
+}
+
 // GetAllStats retrieves all IP addresses and their corresponding counts from the request count map.
 func (p *PolicyProgram) GetAllStats() (map[string]uint64, error) {
     stats := make(map[string]uint64)

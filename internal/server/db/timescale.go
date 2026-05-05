@@ -73,6 +73,7 @@ func createTimescaleTables() error {
 		ip             INET    NOT NULL,
 		req_per_sec    INTEGER NOT NULL,
 		blocked        INTEGER NOT NULL,
+		rate_limited   INTEGER NOT NULL DEFAULT 0,
 		passed         INTEGER NOT NULL,
 		avg_latency_us REAL    DEFAULT 0,
 		min_latency_us REAL    DEFAULT 0,
@@ -82,9 +83,12 @@ func createTimescaleTables() error {
 		return fmt.Errorf("failed to create client_stats: %w", err)
 	}
 
+	// Migrate existing databases that pre-date this column.
+	DB.Exec(`ALTER TABLE client_stats ADD COLUMN IF NOT EXISTS rate_limited INTEGER NOT NULL DEFAULT 0`)
+
 	// Convert to hypertable (TimescaleDB magic!)
 	_, err = DB.Exec(`
-	SELECT create_hypertable('client_stats', 'time', 
+	SELECT create_hypertable('client_stats', 'time',
 		if_not_exists => TRUE,
 		chunk_time_interval => INTERVAL '1 day'
 	)`)

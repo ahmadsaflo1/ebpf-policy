@@ -41,16 +41,16 @@ func StartCollector(){
 func saveClientStats(agentID string, stat models.ClientStats) {
 	// Check if using TimescaleDB or SQLite
 	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB uses 'time' column instead of 'recorded_at'
 		_, err := db.DB.Exec(`
 			INSERT INTO client_stats (
-				time, agent_id, ip, req_per_sec, blocked, passed,
+				time, agent_id, ip, req_per_sec, blocked, rate_limited, passed,
 				avg_latency_us, min_latency_us, max_latency_us
-			) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)`,
+			) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 			agentID,
 			stat.IP,
 			stat.ReqPerSec,
 			stat.Blocked,
+			stat.RateLimited,
 			stat.Passed,
 			stat.AvgLatencyUs,
 			stat.MinLatencyUs,
@@ -60,17 +60,17 @@ func saveClientStats(agentID string, stat models.ClientStats) {
 			log.Printf("Failed to save client stats for agent %s: %v", agentID, err)
 		}
 	} else {
-		// SQLite version (original)
 		_, err := db.DB.Exec(`
 			INSERT INTO client_stats (
-				agent_id, ip, req_per_sec, blocked, passed,
+				agent_id, ip, req_per_sec, blocked, rate_limited, passed,
 				avg_latency_us, min_latency_us, max_latency_us,
 				recorded_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 			agentID,
 			stat.IP,
 			stat.ReqPerSec,
 			stat.Blocked,
+			stat.RateLimited,
 			stat.Passed,
 			stat.AvgLatencyUs,
 			stat.MinLatencyUs,

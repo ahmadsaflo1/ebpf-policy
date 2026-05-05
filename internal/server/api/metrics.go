@@ -35,6 +35,7 @@ func SearchClients(w http.ResponseWriter, r *http.Request) {
 				ip::text,
 				req_per_sec,
 				blocked,
+				rate_limited,
 				passed,
 				avg_latency_us,
 				min_latency_us,
@@ -53,6 +54,7 @@ func SearchClients(w http.ResponseWriter, r *http.Request) {
 				ip,
 				req_per_sec,
 				blocked,
+				rate_limited,
 				passed,
 				avg_latency_us,
 				min_latency_us,
@@ -76,11 +78,11 @@ func SearchClients(w http.ResponseWriter, r *http.Request) {
 	results := []map[string]interface{}{}
 	for rows.Next() {
 		var agentID, ipAddr string
-		var reqPerSec, blocked, passed int
+		var reqPerSec, blocked, rateLimited, passed int
 		var avgLatency, minLatency, maxLatency float64
 		var recordedAt time.Time
 
-		if err := rows.Scan(&agentID, &ipAddr, &reqPerSec, &blocked, &passed,
+		if err := rows.Scan(&agentID, &ipAddr, &reqPerSec, &blocked, &rateLimited, &passed,
 			&avgLatency, &minLatency, &maxLatency, &recordedAt); err != nil {
 			continue
 		}
@@ -90,6 +92,7 @@ func SearchClients(w http.ResponseWriter, r *http.Request) {
 			"ip":             ipAddr,
 			"req_per_sec":    reqPerSec,
 			"blocked":        blocked,
+			"rate_limited":   rateLimited,
 			"passed":         passed,
 			"avg_latency_us": avgLatency,
 			"min_latency_us": minLatency,
@@ -125,7 +128,7 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 	var totalRecords int
 	var avgReqPerSec float64
 	var maxReqPerSec, minReqPerSec int
-	var totalBlocked, totalPassed int
+	var totalBlocked, totalRateLimited, totalPassed int
 	var avgLatency, minLatency, maxLatency float64
 	var firstSeen, lastSeen time.Time
 
@@ -140,6 +143,7 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 				MAX(req_per_sec) as max_req_per_sec,
 				MIN(req_per_sec) as min_req_per_sec,
 				SUM(blocked) as total_blocked,
+				SUM(rate_limited) as total_rate_limited,
 				SUM(passed) as total_passed,
 				AVG(avg_latency_us) as avg_latency,
 				MIN(min_latency_us) as min_latency,
@@ -154,7 +158,7 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 
 		err := db.DB.QueryRow(query, args...).Scan(
 			&resultIP, &totalRecords, &avgReqPerSec, &maxReqPerSec, &minReqPerSec,
-			&totalBlocked, &totalPassed, &avgLatency, &minLatency, &maxLatency,
+			&totalBlocked, &totalRateLimited, &totalPassed, &avgLatency, &minLatency, &maxLatency,
 			&firstSeen, &lastSeen,
 		)
 		if err != nil {
@@ -178,6 +182,7 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 				MAX(req_per_sec) as max_req_per_sec,
 				MIN(req_per_sec) as min_req_per_sec,
 				SUM(blocked) as total_blocked,
+				SUM(rate_limited) as total_rate_limited,
 				SUM(passed) as total_passed,
 				AVG(avg_latency_us) as avg_latency,
 				MIN(min_latency_us) as min_latency,
@@ -193,7 +198,7 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 		var firstSeenStr, lastSeenStr string
 		err = db.DB.QueryRow(query, args...).Scan(
 			&resultIP, &totalRecords, &avgReqPerSec, &maxReqPerSec, &minReqPerSec,
-			&totalBlocked, &totalPassed, &avgLatency, &minLatency, &maxLatency,
+			&totalBlocked, &totalRateLimited, &totalPassed, &avgLatency, &minLatency, &maxLatency,
 			&firstSeenStr, &lastSeenStr,
 		)
 		if err != nil {
@@ -208,19 +213,20 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ip":              resultIP,
-		"timerange":       timerange,
-		"total_records":   totalRecords,
-		"avg_req_per_sec": avgReqPerSec,
-		"max_req_per_sec": maxReqPerSec,
-		"min_req_per_sec": minReqPerSec,
-		"total_blocked":   totalBlocked,
-		"total_passed":    totalPassed,
-		"avg_latency_us":  avgLatency,
-		"min_latency_us":  minLatency,
-		"max_latency_us":  maxLatency,
-		"first_seen":      firstSeen,
-		"last_seen":       lastSeen,
+		"ip":                  resultIP,
+		"timerange":           timerange,
+		"total_records":       totalRecords,
+		"avg_req_per_sec":     avgReqPerSec,
+		"max_req_per_sec":     maxReqPerSec,
+		"min_req_per_sec":     minReqPerSec,
+		"total_blocked":       totalBlocked,
+		"total_rate_limited":  totalRateLimited,
+		"total_passed":        totalPassed,
+		"avg_latency_us":      avgLatency,
+		"min_latency_us":      minLatency,
+		"max_latency_us":      maxLatency,
+		"first_seen":          firstSeen,
+		"last_seen":           lastSeen,
 	})
 }
 
@@ -243,8 +249,9 @@ func GetTopClients(w http.ResponseWriter, r *http.Request) {
 	}
 
 	validOrderBy := map[string]string{
-		"req_per_sec": "avg_req_per_sec",
-		"blocked":     "total_blocked",
+		"req_per_sec":  "avg_req_per_sec",
+		"blocked":      "total_blocked",
+		"rate_limited": "total_rate_limited",
 	}
 
 	orderColumn, ok := validOrderBy[orderBy]
@@ -265,6 +272,7 @@ func GetTopClients(w http.ResponseWriter, r *http.Request) {
 				AVG(req_per_sec) as avg_req_per_sec,
 				MAX(req_per_sec) as max_req_per_sec,
 				SUM(blocked) as total_blocked,
+				SUM(rate_limited) as total_rate_limited,
 				SUM(passed) as total_passed,
 				COUNT(*) as total_records
 			FROM client_stats
@@ -286,6 +294,7 @@ func GetTopClients(w http.ResponseWriter, r *http.Request) {
 				AVG(req_per_sec) as avg_req_per_sec,
 				MAX(req_per_sec) as max_req_per_sec,
 				SUM(blocked) as total_blocked,
+				SUM(rate_limited) as total_rate_limited,
 				SUM(passed) as total_passed,
 				COUNT(*) as total_records
 			FROM client_stats
@@ -307,19 +316,20 @@ func GetTopClients(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ip string
 		var avgReq, maxReq float64
-		var totalBlocked, totalPassed, totalRecords int
+		var totalBlocked, totalRateLimited, totalPassed, totalRecords int
 
-		if err := rows.Scan(&ip, &avgReq, &maxReq, &totalBlocked, &totalPassed, &totalRecords); err != nil {
+		if err := rows.Scan(&ip, &avgReq, &maxReq, &totalBlocked, &totalRateLimited, &totalPassed, &totalRecords); err != nil {
 			continue
 		}
 
 		results = append(results, map[string]interface{}{
-			"ip":              ip,
-			"avg_req_per_sec": avgReq,
-			"max_req_per_sec": maxReq,
-			"total_blocked":   totalBlocked,
-			"total_passed":    totalPassed,
-			"total_records":   totalRecords,
+			"ip":                 ip,
+			"avg_req_per_sec":    avgReq,
+			"max_req_per_sec":    maxReq,
+			"total_blocked":      totalBlocked,
+			"total_rate_limited": totalRateLimited,
+			"total_passed":       totalPassed,
+			"total_records":      totalRecords,
 		})
 	}
 

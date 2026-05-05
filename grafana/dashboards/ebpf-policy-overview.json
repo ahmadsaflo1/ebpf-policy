@@ -773,7 +773,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('1 minute', time) AS time,\n  'Blocked' as metric,\n  SUM(blocked) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('1 minute', time)\nUNION ALL\nSELECT\n  time_bucket('1 minute', time) AS time,\n  'Passed' as metric,\n  SUM(CASE WHEN blocked = 0 THEN 1 ELSE 0 END) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('1 minute', time)\nORDER BY 1,2",
+          "rawSql": "SELECT\n  time_bucket('1 minute', time) AS time,\n  'Blocked' as metric,\n  SUM(blocked) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('1 minute', time)\nUNION ALL\nSELECT\n  time_bucket('1 minute', time) AS time,\n  'Rate Limited' as metric,\n  SUM(rate_limited) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('1 minute', time)\nUNION ALL\nSELECT\n  time_bucket('1 minute', time) AS time,\n  'Passed' as metric,\n  SUM(CASE WHEN blocked = 0 AND rate_limited = 0 THEN 1 ELSE 0 END) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('1 minute', time)\nORDER BY 1,2",
           "refId": "A"
         }
       ],
@@ -859,7 +859,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  ip::text,\n  SUM(blocked) as \"Blocked Count\"\nFROM client_stats\nWHERE $__timeFilter(time)\n  AND blocked > 0\nGROUP BY ip\nORDER BY \"Blocked Count\" DESC\nLIMIT 15",
+          "rawSql": "SELECT\n  ip::text,\n  SUM(blocked) as \"Blocked Count\",\n  SUM(rate_limited) as \"Rate Limited Count\"\nFROM client_stats\nWHERE $__timeFilter(time)\n  AND (blocked > 0 OR rate_limited > 0)\nGROUP BY ip\nORDER BY \"Blocked Count\" DESC\nLIMIT 15",
           "refId": "A"
         }
       ],
@@ -1596,7 +1596,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  ip::text,\n  agent_id,\n  AVG(req_per_sec)::int as avg_req_per_sec,\n  MAX(req_per_sec) as max_req_per_sec,\n  SUM(blocked) as blocked,\n  SUM(passed) as passed,\n  AVG(avg_latency_us)::numeric(10,3) as avg_latency_us,\n  MIN(min_latency_us)::numeric(10,3) as min_latency_us,\n  MAX(max_latency_us)::numeric(10,3) as max_latency_us,\n  MAX(time) as last_seen\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY ip, agent_id\nORDER BY avg_req_per_sec DESC\nLIMIT 50",
+          "rawSql": "SELECT\n  ip::text,\n  agent_id,\n  AVG(req_per_sec)::int as avg_req_per_sec,\n  MAX(req_per_sec) as max_req_per_sec,\n  SUM(blocked) as blocked,\n  SUM(rate_limited) as rate_limited,\n  SUM(passed) as passed,\n  AVG(avg_latency_us)::numeric(10,3) as avg_latency_us,\n  MIN(min_latency_us)::numeric(10,3) as min_latency_us,\n  MAX(max_latency_us)::numeric(10,3) as max_latency_us,\n  MAX(time) as last_seen\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY ip, agent_id\nORDER BY avg_req_per_sec DESC\nLIMIT 50",
           "refId": "A"
         }
       ],
