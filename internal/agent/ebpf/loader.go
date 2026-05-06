@@ -217,6 +217,37 @@ func (stats *LatencyStats) GetMaxLatencyUs() float64 {
     return float64(stats.MaxLatencyNs) / 1000.0
 }
 
+// AddProtectedPort registers a TCP/UDP destination port for DDoS enforcement.
+// Packets to ports not in this map are passed through without any tracking.
+func (p *PolicyProgram) AddProtectedPort(port uint16) error {
+	flag := uint8(1)
+	return p.objs.ProtectedPorts.Put(port, flag)
+}
+
+// RemoveProtectedPort removes a port from DDoS enforcement.
+// After removal, traffic to that port is no longer tracked or blocked.
+func (p *PolicyProgram) RemoveProtectedPort(port uint16) error {
+	return p.objs.ProtectedPorts.Delete(port)
+}
+
+// GetProtectedPorts returns all ports currently registered for DDoS enforcement.
+func (p *PolicyProgram) GetProtectedPorts() ([]uint16, error) {
+	var ports []uint16
+	var key, nextKey uint16
+	var flag uint8
+
+	err := p.objs.ProtectedPorts.NextKey(nil, &key)
+	for err == nil {
+		if lookupErr := p.objs.ProtectedPorts.Lookup(key, &flag); lookupErr == nil {
+			ports = append(ports, key)
+		}
+		err = p.objs.ProtectedPorts.NextKey(key, &nextKey)
+		key = nextKey
+	}
+
+	return ports, nil
+}
+
 // getKtimeNs returns the kernel monotonic time in nanoseconds by reading
 // /proc/uptime, matching the bpf_ktime_get_ns() clock used by the XDP program
 // to store block-expiry timestamps in block_list.
