@@ -39,6 +39,8 @@ func main() {
 	}
 	defer program.Close()
 
+	initProtectedPorts(program)
+
 	store := config.NewRuleStore()
 	connectToServer(cfg, store)
 
@@ -249,4 +251,17 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// initProtectedPorts registers the default set of ports that the eBPF program
+// will subject to DDoS enforcement. Ports not in this list are passed through
+// without any tracking or blocking.
+func initProtectedPorts(program *ebpfloader.PolicyProgram) {
+	defaults := []uint16{80, 443, 8080}
+	for _, port := range defaults {
+		if err := program.AddProtectedPort(port); err != nil {
+			log.Printf("Warning: could not register protected port %d: %v", port, err)
+		}
+	}
+	log.Printf("Protected ports initialized: %v", defaults)
 }

@@ -22,9 +22,9 @@ func StartSystemCollector() {
 
 		log.Printf("Received system metrics from agent %s: CPU=%.1f%%, Mem=%.1f%%, Disk=%.1f%%\n",
 			report.AgentID,
-			report.Metrics.CPUPercent,
-			report.Metrics.MemoryPercent,
-			report.Metrics.DiskPercent)
+			float64(report.Metrics.CPUPercent)/1000,
+			float64(report.Metrics.MemoryPercent)/1000,
+			float64(report.Metrics.DiskPercent)/1000)
 
 		saveSystemMetrics(report.AgentID, report.Metrics)
 	})

@@ -18,7 +18,7 @@ type ClientStats struct {
 	Blocked      int     `json:"blocked"`      // 1 if currently in block_list, 0 otherwise
 	RateLimited  int     `json:"rate_limited"` // 1 if token bucket is active for this IP, 0 otherwise
 	Passed       int     `json:"passed"`       // total packets seen (including dropped by rate limit)
-	AvgLatencyUs float64 `json:"avg_latency_us,omitempty"`
-	MinLatencyUs float64 `json:"min_latency_us,omitempty"`
-	MaxLatencyUs float64 `json:"max_latency_us,omitempty"`
+	AvgLatencyUs int64 `json:"avg_latency_us,omitempty"`
+	MinLatencyUs int64 `json:"min_latency_us,omitempty"`
+	MaxLatencyUs int64 `json:"max_latency_us,omitempty"`
 }

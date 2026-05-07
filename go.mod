@@ -1,6 +1,6 @@
 module github.com/ahmadsaflo1/ebpf-policy
 
-go 1.25.0
+go 1.25.9
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -18,3 +18,5 @@ require (
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 )
+
+tool github.com/cilium/ebpf/cmd/bpf2go

@@ -453,13 +453,13 @@
               <tr class="hover:bg-gray-800/30 transition-colors">
                 <td class="px-5 py-3 text-gray-400 text-xs font-mono" x-text="row.agent_id"></td>
                 <td class="px-4 py-3 text-xs">
-                  <span :class="pctColor(row.cpu_percent)" x-text="row.cpu_percent?.toFixed(1) + '%'"></span>
+                  <span :class="pctColor(row.cpu_percent)" x-text="row.cpu_percent != null ? (row.cpu_percent / 1000).toFixed(1) + '%' : '—'"></span>
                 </td>
                 <td class="px-4 py-3 text-xs">
-                  <span :class="pctColor(row.memory_percent)" x-text="row.memory_percent?.toFixed(1) + '%'"></span>
+                  <span :class="pctColor(row.memory_percent)" x-text="row.memory_percent != null ? (row.memory_percent / 1000).toFixed(1) + '%' : '—'"></span>
                 </td>
                 <td class="px-4 py-3 text-xs">
-                  <span :class="pctColor(row.disk_percent)" x-text="row.disk_percent?.toFixed(1) + '%'"></span>
+                  <span :class="pctColor(row.disk_percent)" x-text="row.disk_percent != null ? (row.disk_percent / 1000).toFixed(1) + '%' : '—'"></span>
                 </td>
                 <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="row.memory_used_mb + ' / ' + row.memory_total_mb + ' MB'"></td>
                 <td class="px-4 py-3 text-gray-400 text-xs font-mono" x-text="fmtBytes(row.net_bytes_sent)"></td>
@@ -900,12 +900,12 @@
           { label: 'Agent',      value: d.agent_id },
           { label: 'Time Range', value: d.timerange },
           { label: 'Samples',    value: d.total_records },
-          { label: 'Avg CPU',    value: d.avg_cpu_percent?.toFixed(1) + '%',  color: this.pctColor(d.avg_cpu_percent) },
-          { label: 'Max CPU',    value: d.max_cpu_percent?.toFixed(1) + '%',  color: this.pctColor(d.max_cpu_percent) },
-          { label: 'Avg Memory', value: d.avg_memory_percent?.toFixed(1) + '%', color: this.pctColor(d.avg_memory_percent) },
-          { label: 'Max Memory', value: d.max_memory_percent?.toFixed(1) + '%', color: this.pctColor(d.max_memory_percent) },
-          { label: 'Avg Disk',   value: d.avg_disk_percent?.toFixed(1) + '%', color: this.pctColor(d.avg_disk_percent) },
-          { label: 'Max Disk',   value: d.max_disk_percent?.toFixed(1) + '%', color: this.pctColor(d.max_disk_percent) },
+          { label: 'Avg CPU',    value: d.avg_cpu_percent != null ? (d.avg_cpu_percent / 1000).toFixed(1) + '%' : '—',  color: this.pctColor(d.avg_cpu_percent) },
+          { label: 'Max CPU',    value: d.max_cpu_percent != null ? (d.max_cpu_percent / 1000).toFixed(1) + '%' : '—',  color: this.pctColor(d.max_cpu_percent) },
+          { label: 'Avg Memory', value: d.avg_memory_percent != null ? (d.avg_memory_percent / 1000).toFixed(1) + '%' : '—', color: this.pctColor(d.avg_memory_percent) },
+          { label: 'Max Memory', value: d.max_memory_percent != null ? (d.max_memory_percent / 1000).toFixed(1) + '%' : '—', color: this.pctColor(d.max_memory_percent) },
+          { label: 'Avg Disk',   value: d.avg_disk_percent != null ? (d.avg_disk_percent / 1000).toFixed(1) + '%' : '—', color: this.pctColor(d.avg_disk_percent) },
+          { label: 'Max Disk',   value: d.max_disk_percent != null ? (d.max_disk_percent / 1000).toFixed(1) + '%' : '—', color: this.pctColor(d.max_disk_percent) },
           { label: 'Net Sent',   value: this.fmtBytes(d.total_bytes_sent) },
           { label: 'Net Recv',   value: this.fmtBytes(d.total_bytes_recv) },
         ];
@@ -934,8 +934,8 @@
 
       pctColor(pct) {
         if (pct == null) return 'text-gray-300';
-        if (pct >= 85)   return 'text-red-400';
-        if (pct >= 60)   return 'text-yellow-400';
+        if (pct >= 85000) return 'text-red-400';
+        if (pct >= 60000) return 'text-yellow-400';
         return 'text-green-400';
       },
     };

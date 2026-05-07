@@ -199,22 +199,52 @@ func (p *PolicyProgram) GetAllLatencyStats() (map[string]*LatencyStats, error) {
 }
 
 // GetAvgLatency calculates average latency for an IP in microseconds
-func (stats *LatencyStats) GetAvgLatencyUs() float64 {
+func (stats *LatencyStats) GetAvgLatencyUs() int64 {
     if stats.PacketCount == 0 {
         return 0
     }
-    avgNs := float64(stats.TotalLatencyNs) / float64(stats.PacketCount)
-    return avgNs / 1000.0  // Convert to microseconds
+    return int64(stats.TotalLatencyNs) / int64(stats.PacketCount) / 1000
 }
 
 // GetMinLatencyUs returns minimum latency in microseconds
-func (stats *LatencyStats) GetMinLatencyUs() float64 {
-    return float64(stats.MinLatencyNs) / 1000.0
+func (stats *LatencyStats) GetMinLatencyUs() int64 {
+    return int64(stats.MinLatencyNs) / 1000
 }
 
 // GetMaxLatencyUs returns maximum latency in microseconds
-func (stats *LatencyStats) GetMaxLatencyUs() float64 {
-    return float64(stats.MaxLatencyNs) / 1000.0
+func (stats *LatencyStats) GetMaxLatencyUs() int64 {
+    return int64(stats.MaxLatencyNs) / 1000
+}
+
+// AddProtectedPort registers a TCP/UDP destination port for DDoS enforcement.
+// Packets to ports not in this map are passed through without any tracking.
+func (p *PolicyProgram) AddProtectedPort(port uint16) error {
+	flag := uint8(1)
+	return p.objs.ProtectedPorts.Put(port, flag)
+}
+
+// RemoveProtectedPort removes a port from DDoS enforcement.
+// After removal, traffic to that port is no longer tracked or blocked.
+func (p *PolicyProgram) RemoveProtectedPort(port uint16) error {
+	return p.objs.ProtectedPorts.Delete(port)
+}
+
+// GetProtectedPorts returns all ports currently registered for DDoS enforcement.
+func (p *PolicyProgram) GetProtectedPorts() ([]uint16, error) {
+	var ports []uint16
+	var key, nextKey uint16
+	var flag uint8
+
+	err := p.objs.ProtectedPorts.NextKey(nil, &key)
+	for err == nil {
+		if lookupErr := p.objs.ProtectedPorts.Lookup(key, &flag); lookupErr == nil {
+			ports = append(ports, key)
+		}
+		err = p.objs.ProtectedPorts.NextKey(key, &nextKey)
+		key = nextKey
+	}
+
+	return ports, nil
 }
 
 // getKtimeNs returns the kernel monotonic time in nanoseconds by reading
@@ -231,16 +261,20 @@ func getKtimeNs() (uint64, error) {
     return uint64(uptime * 1e9), nil
 }
 
-// ipToUint32 converts a net.IP to a big-endian uint32 suitable for use as an
-// eBPF map key.
+// ipToUint32 converts a net.IP to a uint32 for use as an eBPF map key.
+// The kernel stores src_ip = ip->saddr (network byte order) directly as the
+// map key, so on little-endian x86 the bytes must be interpreted as
+// little-endian — equivalent to htonl in C.
 func ipToUint32(ip net.IP) uint32 {
 	ip = ip.To4()
-	return binary.BigEndian.Uint32(ip)
+	return binary.LittleEndian.Uint32(ip)
 }
 
-// uint32ToIP converts a big-endian uint32 eBPF map key back to a net.IP.
+// uint32ToIP converts an eBPF map key back to a net.IP.
+// Reverses ipToUint32: uses little-endian so the bytes come out in network
+// order — equivalent to ntohl in C.
 func uint32ToIP(n uint32) net.IP {
 	ip := make(net.IP, 4)
-	binary.BigEndian.PutUint32(ip, n)
+	binary.LittleEndian.PutUint32(ip, n)
 	return ip
 }

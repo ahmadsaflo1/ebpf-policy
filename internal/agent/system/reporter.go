@@ -54,5 +54,5 @@ func (r *Reporter) Report(metrics models.SystemMetrics) {
 	}
 
 	log.Printf("System metrics sent: CPU=%.1f%%, Mem=%.1f%%, Disk=%.1f%%\n",
-		metrics.CPUPercent, metrics.MemoryPercent, metrics.DiskPercent)
+		float64(metrics.CPUPercent)/1000, float64(metrics.MemoryPercent)/1000, float64(metrics.DiskPercent)/1000)
 }

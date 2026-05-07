@@ -78,7 +78,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT AVG(cpu_percent) as \"CPU Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '5 minutes'",
+          "rawSql": "SELECT AVG(cpu_percent) / 1000.0 as \"CPU Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '5 minutes'",
           "refId": "A"
         }
       ],
@@ -141,7 +141,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT AVG(memory_percent) as \"Memory Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '5 minutes'",
+          "rawSql": "SELECT AVG(memory_percent) / 1000.0 as \"Memory Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '5 minutes'",
           "refId": "A"
         }
       ],
@@ -204,7 +204,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT AVG(disk_percent) as \"Disk Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '5 minutes'",
+          "rawSql": "SELECT AVG(disk_percent) / 1000.0 as \"Disk Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '5 minutes'",
           "refId": "A"
         }
       ],
@@ -348,7 +348,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('30 seconds', time) AS time,\n  agent_id,\n  AVG(cpu_percent) as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('30 seconds', time), agent_id\nORDER BY 1,2",
+          "rawSql": "SELECT\n  time_bucket('30 seconds', time) AS time,\n  agent_id,\n  AVG(cpu_percent) / 1000.0 as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('30 seconds', time), agent_id\nORDER BY 1,2",
           "refId": "A"
         }
       ],
@@ -435,7 +435,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('30 seconds', time) AS time,\n  agent_id,\n  AVG(memory_percent) as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('30 seconds', time), agent_id\nORDER BY 1,2",
+          "rawSql": "SELECT\n  time_bucket('30 seconds', time) AS time,\n  agent_id,\n  AVG(memory_percent) / 1000.0 as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('30 seconds', time), agent_id\nORDER BY 1,2",
           "refId": "A"
         }
       ],
@@ -1487,7 +1487,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  agent_id,\n  AVG(cpu_percent)::numeric(10,2) as avg_cpu,\n  AVG(memory_percent)::numeric(10,2) as avg_memory,\n  AVG(disk_percent)::numeric(10,2) as avg_disk,\n  EXTRACT(EPOCH FROM (NOW() - MAX(time)))::int as last_seen\nFROM system_metrics\nWHERE time > NOW() - INTERVAL '10 minutes'\nGROUP BY agent_id\nORDER BY last_seen ASC",
+          "rawSql": "SELECT\n  agent_id,\n  (AVG(cpu_percent) / 1000.0)::numeric(10,2) as avg_cpu,\n  (AVG(memory_percent) / 1000.0)::numeric(10,2) as avg_memory,\n  (AVG(disk_percent) / 1000.0)::numeric(10,2) as avg_disk,\n  EXTRACT(EPOCH FROM (NOW() - MAX(time)))::int as last_seen\nFROM system_metrics\nWHERE time > NOW() - INTERVAL '10 minutes'\nGROUP BY agent_id\nORDER BY last_seen ASC",
           "refId": "A"
         }
       ],
@@ -1596,7 +1596,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  ip::text,\n  agent_id,\n  AVG(req_per_sec)::int as avg_req_per_sec,\n  MAX(req_per_sec) as max_req_per_sec,\n  SUM(blocked) as blocked,\n  SUM(rate_limited) as rate_limited,\n  SUM(passed) as passed,\n  AVG(avg_latency_us)::numeric(10,3) as avg_latency_us,\n  MIN(min_latency_us)::numeric(10,3) as min_latency_us,\n  MAX(max_latency_us)::numeric(10,3) as max_latency_us,\n  MAX(time) as last_seen\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY ip, agent_id\nORDER BY avg_req_per_sec DESC\nLIMIT 50",
+          "rawSql": "SELECT\n  ip::text,\n  agent_id,\n  AVG(req_per_sec)::int as avg_req_per_sec,\n  MAX(req_per_sec) as max_req_per_sec,\n  SUM(blocked) as blocked,\n  SUM(rate_limited) as rate_limited,\n  SUM(passed) as passed,\n  AVG(avg_latency_us)::bigint as avg_latency_us,\n  MIN(min_latency_us)::bigint as min_latency_us,\n  MAX(max_latency_us)::bigint as max_latency_us,\n  MAX(time) as last_seen\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY ip, agent_id\nORDER BY avg_req_per_sec DESC\nLIMIT 50",
           "refId": "A"
         }
       ],

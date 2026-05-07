@@ -1,6 +1,6 @@
 # Compiled binaries
-/server
-/agent
+/policy-server
+/policy-agent
 /webserver
 
 # Go build-cache

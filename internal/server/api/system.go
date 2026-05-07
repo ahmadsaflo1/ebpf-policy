@@ -87,7 +87,7 @@ func GetSystemMetrics(w http.ResponseWriter, r *http.Request) {
 	var results []map[string]interface{}
 	for rows.Next() {
 		var agentID string
-		var cpuPercent, memPercent, diskPercent float64
+		var cpuPercent, memPercent, diskPercent int64
 		var memUsedMB, memTotalMB, diskUsedGB, diskTotalGB, netBytesSent, netBytesRecv uint64
 		var recordedAt time.Time
 
@@ -138,7 +138,7 @@ func GetSystemMetricsAggregated(w http.ResponseWriter, r *http.Request) {
 	var query string
 	var args []interface{}
 	var agentID string
-	var avgCPU, maxCPU, avgMem, maxMem, avgDisk, maxDisk float64
+	var avgCPU, maxCPU, avgMem, maxMem, avgDisk, maxDisk int64
 	var totalBytesSent, totalBytesRecv uint64
 	var totalRecords int
 
@@ -149,11 +149,11 @@ func GetSystemMetricsAggregated(w http.ResponseWriter, r *http.Request) {
 		query = `
 			SELECT
 				agent_id,
-				AVG(cpu_percent) as avg_cpu,
+				CAST(ROUND(AVG(cpu_percent)) AS INTEGER) as avg_cpu,
 				MAX(cpu_percent) as max_cpu,
-				AVG(memory_percent) as avg_mem,
+				CAST(ROUND(AVG(memory_percent)) AS INTEGER) as avg_mem,
 				MAX(memory_percent) as max_mem,
-				AVG(disk_percent) as avg_disk,
+				CAST(ROUND(AVG(disk_percent)) AS INTEGER) as avg_disk,
 				MAX(disk_percent) as max_disk,
 				SUM(net_bytes_sent) as total_bytes_sent,
 				SUM(net_bytes_recv) as total_bytes_recv,
@@ -185,11 +185,11 @@ func GetSystemMetricsAggregated(w http.ResponseWriter, r *http.Request) {
 		query = `
 			SELECT
 				agent_id,
-				AVG(cpu_percent) as avg_cpu,
+				CAST(ROUND(AVG(cpu_percent)) AS INTEGER) as avg_cpu,
 				MAX(cpu_percent) as max_cpu,
-				AVG(memory_percent) as avg_mem,
+				CAST(ROUND(AVG(memory_percent)) AS INTEGER) as avg_mem,
 				MAX(memory_percent) as max_mem,
-				AVG(disk_percent) as avg_disk,
+				CAST(ROUND(AVG(disk_percent)) AS INTEGER) as avg_disk,
 				MAX(disk_percent) as max_disk,
 				SUM(net_bytes_sent) as total_bytes_sent,
 				SUM(net_bytes_recv) as total_bytes_recv,

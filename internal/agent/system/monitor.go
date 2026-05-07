@@ -71,7 +71,7 @@ func (m *Monitor) collect() models.SystemMetrics {
 		deltaTotal := current.total - m.lastCPUStat.total
 		deltaIdle := current.idle - m.lastCPUStat.idle
 		if deltaTotal > 0 {
-			metrics.CPUPercent = 100.0 * float64(deltaTotal-deltaIdle) / float64(deltaTotal)
+			metrics.CPUPercent = int64(100000 * (deltaTotal - deltaIdle) / deltaTotal)
 		}
 		m.lastCPUStat = current
 	}	
@@ -81,7 +81,7 @@ func (m *Monitor) collect() models.SystemMetrics {
 		memUsed := memTotal - memAvail
 		metrics.MemoryTotalMB = memTotal / 1024 / 1024
 		metrics.MemoryUsedMB = memUsed / 1024 / 1024
-		metrics.MemoryPercent = 100.0 * float64(memUsed) / float64(memTotal)
+		metrics.MemoryPercent = int64(100000 * memUsed / memTotal)
 	}
 
 	// Disk usage (root partition)
@@ -161,7 +161,7 @@ func readMemInfo() (total, available uint64, err error) {
 }
 
 // readDiskUsage uses syscall.Statfs to get disk usage for the given path.
-func readDiskUsage(path string) (usedGB, totalGB uint64, percent float64, err error) {
+func readDiskUsage(path string) (usedGB, totalGB uint64, percentMil int64, err error) {
 	var stat syscall.Statfs_t
 	if err = syscall.Statfs(path, &stat); err != nil {
 		return
@@ -172,7 +172,7 @@ func readDiskUsage(path string) (usedGB, totalGB uint64, percent float64, err er
 	usedGB = used / 1024 / 1024 / 1024
 	totalGB = total / 1024 / 1024 / 1024
 	if total > 0 {
-		percent = 100.0 * float64(used) / float64(total)
+		percentMil = int64(100000 * used / total)
 	}
 	return
 }

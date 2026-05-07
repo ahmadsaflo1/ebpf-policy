@@ -79,7 +79,7 @@ func SearchClients(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var agentID, ipAddr string
 		var reqPerSec, blocked, rateLimited, passed int
-		var avgLatency, minLatency, maxLatency float64
+		var avgLatency, minLatency, maxLatency int64
 		var recordedAt time.Time
 
 		if err := rows.Scan(&agentID, &ipAddr, &reqPerSec, &blocked, &rateLimited, &passed,
@@ -129,7 +129,7 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 	var avgReqPerSec float64
 	var maxReqPerSec, minReqPerSec int
 	var totalBlocked, totalRateLimited, totalPassed int
-	var avgLatency, minLatency, maxLatency float64
+	var avgLatency, minLatency, maxLatency int64
 	var firstSeen, lastSeen time.Time
 
 	if os.Getenv("USE_TIMESCALE") == "true" {
@@ -145,7 +145,7 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 				SUM(blocked) as total_blocked,
 				SUM(rate_limited) as total_rate_limited,
 				SUM(passed) as total_passed,
-				AVG(avg_latency_us) as avg_latency,
+				CAST(ROUND(AVG(avg_latency_us)) AS BIGINT) as avg_latency,
 				MIN(min_latency_us) as min_latency,
 				MAX(max_latency_us) as max_latency,
 				MIN(time) as first_seen,
@@ -184,7 +184,7 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 				SUM(blocked) as total_blocked,
 				SUM(rate_limited) as total_rate_limited,
 				SUM(passed) as total_passed,
-				AVG(avg_latency_us) as avg_latency,
+				CAST(ROUND(AVG(avg_latency_us)) AS INTEGER) as avg_latency,
 				MIN(min_latency_us) as min_latency,
 				MAX(max_latency_us) as max_latency,
 				MIN(recorded_at) as first_seen,
