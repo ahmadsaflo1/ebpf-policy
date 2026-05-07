@@ -148,20 +148,62 @@ The XDP program runs in **generic mode** (`XDP_FLAGS_SKB_MODE`) for broad driver
 
 ## Rule Matching
 
-The agent evaluates each IP against all active rules:
+Rule matching happens at two layers: the **XDP kernel program** filters every packet, and the **Go agent** evaluates traffic statistics every 10 seconds to decide which enforcement actions to apply.
 
-1. Find all rules where the IP's req/s exceeds the rule's `threshold`.
+### XDP Packet Pipeline (kernel-space, per packet)
+
+Every inbound packet passes through these steps in order:
+
+```
+Incoming packet
+  → Non-IPv4?                          XDP_PASS (not tracked)
+  → Non-TCP/UDP?                       XDP_PASS (ICMP, IGMP, etc. pass through)
+  → Destination port not in protected_ports?  XDP_PASS (unmonitored ports pass through)
+  → src IP in block_list and not expired?     XDP_DROP
+  → Increment request_count[src_ip]
+  → Token bucket exhausted?            XDP_DROP
+  → Record XDP latency
+  → XDP_PASS
+```
+
+Only traffic to ports registered in `protected_ports` is counted and subject to enforcement. All other ports pass through without any tracking.
+
+### Agent Evaluation Loop (user-space, every 10 s)
+
+Every 10 seconds the agent reads the eBPF `request_count` map, computes `req/s = delta / 10` per IP, and calls `store.Match(reqPerSec)` to find the winning rule:
+
+1. Collect all rules where `reqPerSec > rule.Threshold`.
 2. **`block` always takes priority over `ratelimit`.**
 3. Among rules with the same action, the **highest threshold wins** (most specific rule).
+4. Returns no match if no rule's threshold is exceeded — existing rate limits are removed.
+
+**Block enforcement:**
+
+| Situation | Behavior |
+|-----------|----------|
+| New IP exceeds block threshold | `BlockIP` called — expiry timestamp written to `block_list` kernel map |
+| Still blocked and still high | Block extended for another `duration` seconds |
+| Block just expired but still high | Re-blocked immediately |
+| Block just expired and traffic normal | Unblocked — no action |
+
+**Rate-limit enforcement:**
+
+| Situation | Behavior |
+|-----------|----------|
+| IP exceeds rate-limit threshold | `SetRateLimit` called — writes `rule.Threshold` req/s to `rate_limit_config_map` |
+| Rate already set to same value | No kernel update (idempotent) |
+| Traffic drops below threshold | `RemoveRateLimit` called — clears both config and token-bucket state |
 
 ### Token Bucket (kernel-level rate limiting)
 
+The token bucket parameters are set **dynamically per IP** from the matched rule:
+
 | Parameter | Value |
 |-----------|-------|
-| Refill rate | 100 tokens / second |
-| Max capacity (burst) | 200 tokens |
+| Refill rate | `rule.Threshold` tokens / second (the matched rule's threshold) |
+| Max capacity (burst) | `rule.Threshold × 2` tokens |
 
-Packets are silently dropped when the token quota is exhausted. Block entries store an expiration timestamp in kernel nanoseconds and are cleaned up automatically.
+Packets are silently dropped when the token quota is exhausted. Block entries store an expiration timestamp in kernel nanoseconds (`bpf_ktime_get_ns`) and are enforced atomically on every packet without any user-space involvement.
 
 ### Agent Resilience
 
