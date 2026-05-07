@@ -1,6 +1,6 @@
 module github.com/ahmadsaflo1/ebpf-policy
 
-go 1.25.0
+go 1.25.9
 
 require (
 	github.com/cilium/ebpf v0.21.0
