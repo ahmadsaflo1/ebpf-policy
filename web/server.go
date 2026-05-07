@@ -37,32 +37,25 @@ func Start(ctx context.Context, conf *config.Settings) (*http.Server, error) {
 	if conf.Server.LetsEncrypt {
 
 		manager := cert.NewManager(conf)
-
 		tlsConf := manager.TLSConfig()
 		tlsConf.CipherSuites = config.DefaultCiphers
 		tlsConf.CurvePreferences = config.DefaultCurves
 		tlsConf.MinVersion = tls.VersionTLS12
 		tlsConf.MaxVersion = tls.VersionTLS13
 
+		// listener for acme-http-challenges and http fallback that redirects to https
 		altAddr := conf.Server.Host + ":" + strconv.Itoa(conf.Server.AltPort)
-		go func() {
-			// http listener for acme-http-challenges and a http fallback that redirects to https
-			handler := manager.HTTPHandler(httpsRedirector(443))
-
-			if err := http.ListenAndServe(altAddr, handler); err != nil {
-				slog.Error("http fallback listener", "error", err)
-			}
-
-		}()
+		go http.ListenAndServe(altAddr, manager.HTTPHandler(httpsRedirector(443)))
+		slog.Info("http-server", "addr", altAddr)
 
 		srv := &http.Server{
 			Addr:    addr,
 			Handler: handler,
 		}
 
-		slog.Info("server", "listener", addr)
 		srv.TLSConfig = tlsConf
 		go srv.ListenAndServeTLS("", "")
+		slog.Info("https-server", "addr", addr)
 
 		return srv, nil
 	}
@@ -74,6 +67,7 @@ func Start(ctx context.Context, conf *config.Settings) (*http.Server, error) {
 	}
 
 	go srv.ListenAndServe()
+	slog.Info("http-server", "addr", addr)
 
 	return srv, nil
 }
