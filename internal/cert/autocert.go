@@ -3,8 +3,10 @@ package cert
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 
+	"github.com/ahmadsaflo1/ebpf-policy/internal/config"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -17,18 +19,28 @@ const (
 	AcmeBuypassUrl            = "https://api.buypass.com/acme/directory"
 )
 
-type HostPolicy = autocert.HostPolicy
-
 var (
 	errHostNotAllowed = errors.New("host is not allowed")
 )
 
-func NewManager(certDir string, accountEmail, acmeDir string, hosts ...string) *autocert.Manager {
+func NewManager(conf *config.Settings) *autocert.Manager {
+
+	certDir := conf.Server.CertDir
+	if certDir == "" {
+		certDir = filepath.Join(conf.AppDir, "certs")
+	}
+
+	// by default we are using letsencrypt staging certificates
+	acmeDir := AcmeLetsencryptStagingUrl
+	if conf.Env == "prod" {
+		acmeDir = AcmeLetsencryptUrl
+	}
+
 	m := &autocert.Manager{
 		Cache:      autocert.DirCache(certDir),
 		Prompt:     autocert.AcceptTOS,
-		Email:      accountEmail,
-		HostPolicy: allowedHosts(hosts),
+		Email:      conf.Server.Contact,
+		HostPolicy: allowedHosts(conf.Server.Domains),
 	}
 	// default directory is letsencrypt production
 	if acmeDir != "" {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -12,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -37,19 +35,9 @@ func Start(ctx context.Context, conf *config.Settings) (*http.Server, error) {
 	addr := conf.Server.Host + ":" + strconv.Itoa(conf.Server.Port)
 
 	if conf.Server.LetsEncrypt {
-		certDir := conf.Server.CertDir
-		if certDir == "" {
-			certDir = filepath.Join(conf.AppDir, "certs")
-		}
 
-		// by default we are using letsencrypt staging certificates
-		acmeDir := cert.AcmeLetsencryptStagingUrl
-		if conf.Env == "prod" {
-			acmeDir = cert.AcmeLetsencryptUrl
-		}
-		manager := cert.NewManager(certDir, conf.Server.Contact, acmeDir)
+		manager := cert.NewManager(conf)
 
-		manager.HostPolicy = allowedHost(conf.Server.Domains)
 		tlsConf := manager.TLSConfig()
 		tlsConf.CipherSuites = config.DefaultCiphers
 		tlsConf.CurvePreferences = config.DefaultCurves
@@ -90,35 +78,6 @@ func Start(ctx context.Context, conf *config.Settings) (*http.Server, error) {
 	return srv, nil
 }
 
-var (
-	errHostNotAllowed = errors.New("hostname not whitelisted")
-	errHostInvalid    = errors.New("hostname is invalid")
-)
-
-func allowedHost(hosts []string) cert.HostPolicy {
-	return func(_ context.Context, hostName string) error {
-		if len(hostName) == 0 {
-			return errHostInvalid
-		}
-
-		for _, h := range hosts {
-			if len(h) > 0 && h[0] == '*' {
-				p := 1
-				if len(h) > 1 && h[1] == '.' {
-					p = 2
-				}
-				if strings.HasSuffix(hostName, h[p:]) {
-					return nil
-				}
-			} else if h == hostName {
-				return nil
-			}
-		}
-
-		return errHostNotAllowed
-	}
-}
-
 func httpsRedirector(destPort int) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u := &url.URL{
@@ -142,10 +101,7 @@ func httpsRedirector(destPort int) http.HandlerFunc {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-
-	// User agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15
-	// agent => 'Safari/605.1.15'
-
+	// get the client IP
 	remote, _, _ := net.SplitHostPort(req.RemoteAddr)
 	ip := net.ParseIP(remote)
 
