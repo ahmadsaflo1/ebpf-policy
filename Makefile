@@ -48,6 +48,10 @@ build-agent:
 	@echo "Building agent..."
 	go build -o agent ./cmd/agent/
 
+build-webserver:
+	go build -o webserver ./cmd/webserver
+
+
 start-infra:
 	@echo "Starting infrastructure (TimescaleDB + NATS + Grafana)..."
 	docker compose up -d
@@ -83,6 +87,10 @@ run-agent:
 	     NATS_URL=$(NATS_URL) \
 	     ./agent
 
+run-webserver:
+	@echo "Starting webserver..."
+	./webserver -c server.conf
+
 status:
 	@echo "Infrastructure Status:"
 	@docker ps --filter "name=timescaledb" --filter "name=nats" --filter "name=grafana" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
@@ -94,6 +102,10 @@ logs-nats:
 
 logs-grafana:
 	docker logs -f grafana
+
+
+
+
 
 clean:
 	@echo "Cleaning build artifacts..."
