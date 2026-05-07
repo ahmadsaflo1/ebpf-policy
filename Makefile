@@ -1,4 +1,4 @@
-.PHONY: help build-server build-agent start-infra stop-infra run-server run-agent
+.PHONY: build start stop help build-server build-agent start-infra stop-infra run-server run-agent
 
 # Default values (can be overridden)
 INTERFACE ?= eth0
@@ -7,10 +7,19 @@ ENV ?=
 SERVER_URL ?= http://localhost:8080
 NATS_URL ?= nats://localhost:4222
 
+build: build-server build-agent
+
+start: start-infra run-server 
+
+stop: stop-infra
+
 help:
 	@echo 'Usage: make [target] [VARIABLE=value]'
 	@echo ''
 	@echo 'Targets:'
+	@echo '  build           - Build server and agent'
+	@echo '  start           - Start infra, server and agent'
+	@echo '  stop            - Stop infrastructure containers'
 	@echo '  build-server    - Build policy server'
 	@echo '  build-agent     - Build policy agent (includes eBPF compilation)'
 	@echo '  start-infra     - Start TimescaleDB and NATS containers'
@@ -44,7 +53,7 @@ build-agent:
 	@echo "Building eBPF program..."
 	cd ebpf && make && cd ..
 	@echo "Generating Go bindings..."
-	cd internal/agent/ebpf && bpf2go -go-package ebpf Policy ../../../ebpf/policy.c && cd ../../..
+	go generate ./internal/agent/ebpf
 	@echo "Building agent..."
 	go build -o agent ./cmd/agent/
 
