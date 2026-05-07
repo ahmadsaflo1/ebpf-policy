@@ -261,20 +261,17 @@ func getKtimeNs() (uint64, error) {
     return uint64(uptime * 1e9), nil
 }
 
-// ipToUint32 converts a net.IP to a uint32 for use as an eBPF map key.
-// The kernel stores src_ip = ip->saddr (network byte order) directly as the
-// map key, so on little-endian x86 the bytes must be interpreted as
-// little-endian — equivalent to htonl in C.
+// ipToUint32 converts a net.IP to a big-endian uint32 for use as an eBPF map key.
+// The C program stores keys as bpf_ntohl(ip->saddr) (host byte order),
+// which on the wire matches big-endian — same representation as net.IP.
 func ipToUint32(ip net.IP) uint32 {
 	ip = ip.To4()
-	return binary.LittleEndian.Uint32(ip)
+	return binary.BigEndian.Uint32(ip)
 }
 
 // uint32ToIP converts an eBPF map key back to a net.IP.
-// Reverses ipToUint32: uses little-endian so the bytes come out in network
-// order — equivalent to ntohl in C.
 func uint32ToIP(n uint32) net.IP {
 	ip := make(net.IP, 4)
-	binary.LittleEndian.PutUint32(ip, n)
+	binary.BigEndian.PutUint32(ip, n)
 	return ip
 }
