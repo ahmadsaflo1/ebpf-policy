@@ -73,6 +73,10 @@ build-agent:
 	go build -o policy-agent ./cmd/agent/
 	@echo "Agent binary ready: ./policy-agent"
 
+build-webserver:
+	go build -o webserver ./cmd/webserver
+
+
 start-infra:
 	@echo "Starting infrastructure (TimescaleDB + NATS + Grafana)..."
 	docker compose up -d
@@ -113,6 +117,10 @@ db-flush:
 	docker stop timescaledb && docker rm timescaledb
 	docker volume rm ebpf-policy_timescaledb-data
 	@echo "Database volume removed. Run 'make start' to start fresh."
+
+run-webserver:
+	@echo "Starting webserver..."
+	./webserver -c server.conf
 
 status:
 	@echo "Infrastructure Status:"

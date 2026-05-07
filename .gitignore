@@ -1,6 +1,7 @@
 # Compiled binaries
 /policy-server
 /policy-agent
+/webserver
 
 # Go build-cache
 *.o
@@ -16,8 +17,5 @@ internal/agent/ebpf/policy_bpf*.o
 # eBPF objekt
 ebpf/*.o
 
-# Miljövariabler
 .env
-
-# VS Code
 .vscode/
