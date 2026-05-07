@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/ahmadsaflo1/ebpf-policy/internal/agent"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/config"
 	"github.com/ahmadsaflo1/ebpf-policy/web"
 )
@@ -63,6 +64,15 @@ func main() {
 	if err != nil {
 		slog.Error("server", "error", err)
 		os.Exit(1)
+	}
+
+	if conf.Agent.Interface != "" {
+		if err := agent.Start(ctx, conf); err != nil {
+			slog.Error("agent", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		slog.Info("agent disabled — set [agent] interface in config to enable")
 	}
 
 	<-sigint

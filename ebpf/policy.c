@@ -218,7 +218,7 @@ int policy_filter(struct xdp_md *ctx)
     if (!is_protected)
         return XDP_PASS;
 
-    __u32 src_ip = ip->saddr;
+    __u32 src_ip = bpf_ntohl(ip->saddr);
     __u64 now    = bpf_ktime_get_ns();
     int   action = XDP_PASS;
 

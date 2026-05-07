@@ -11,9 +11,6 @@
 internal/agent/ebpf/policy_bpf*.go
 internal/agent/ebpf/policy_bpf*.o
 
-# SQLite database
-*.db
-
 # eBPF objekt
 ebpf/*.o
 

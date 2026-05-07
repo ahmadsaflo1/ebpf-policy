@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strconv"
 
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
@@ -23,34 +22,17 @@ func GetRules(w http.ResponseWriter, r *http.Request) {
 	var rows *sql.Rows
 	var err error
 
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB query (PostgreSQL syntax)
-		if env != "" {
-			rows, err = db.DB.Query(`
-				SELECT id, name, threshold, action, duration, tag, created_at
-				FROM policy_rules
-				WHERE tag = $1 OR tag = ''
-				ORDER BY created_at DESC`, env)
-		} else {
-			rows, err = db.DB.Query(`
-				SELECT id, name, threshold, action, duration, tag, created_at
-				FROM policy_rules
-				ORDER BY created_at DESC`)
-		}
+	if env != "" {
+		rows, err = db.DB.Query(`
+			SELECT id, name, threshold, action, duration, tag, created_at
+			FROM policy_rules
+			WHERE tag = $1 OR tag = ''
+			ORDER BY created_at DESC`, env)
 	} else {
-		// SQLite query
-		if env != "" {
-			rows, err = db.DB.Query(`
-				SELECT id, name, threshold, action, duration, tag, created_at
-				FROM policy_rules
-				WHERE tag = ? OR tag = ''
-				ORDER BY created_at DESC`, env)
-		} else {
-			rows, err = db.DB.Query(`
-				SELECT id, name, threshold, action, duration, tag, created_at
-				FROM policy_rules
-				ORDER BY created_at DESC`)
-		}
+		rows, err = db.DB.Query(`
+			SELECT id, name, threshold, action, duration, tag, created_at
+			FROM policy_rules
+			ORDER BY created_at DESC`)
 	}
 
 	if err != nil {
@@ -82,35 +64,16 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var result sql.Result
-	var err error
 	var id int64
-
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB - use RETURNING clause
-		err = db.DB.QueryRow(`
-			INSERT INTO policy_rules (name, threshold, action, duration, tag)
-			VALUES ($1, $2, $3, $4, $5)
-			RETURNING id`,
-			rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag,
-		).Scan(&id)
-		
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-	} else {
-		// SQLite
-		result, err = db.DB.Exec(`
-			INSERT INTO policy_rules (name, threshold, action, duration, tag)
-			VALUES (?, ?, ?, ?, ?)`,
-			rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag,
-		)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		id, _ = result.LastInsertId()
+	err := db.DB.QueryRow(`
+		INSERT INTO policy_rules (name, threshold, action, duration, tag)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag,
+	).Scan(&id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
 	}
 
 	rule.ID = int(id)
@@ -124,23 +87,12 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 func GetRule(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var rule models.PolicyRule
-	var err error
 
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB
-		err = db.DB.QueryRow(`
-			SELECT id, name, threshold, action, duration, tag, created_at
-			FROM policy_rules WHERE id = $1`, id,
-		).Scan(&rule.ID, &rule.Name, &rule.Threshold,
-			&rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
-	} else {
-		// SQLite
-		err = db.DB.QueryRow(`
-			SELECT id, name, threshold, action, duration, tag, created_at
-			FROM policy_rules WHERE id = ?`, id,
-		).Scan(&rule.ID, &rule.Name, &rule.Threshold,
-			&rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
-	}
+	err := db.DB.QueryRow(`
+		SELECT id, name, threshold, action, duration, tag, created_at
+		FROM policy_rules WHERE id = $1`, id,
+	).Scan(&rule.ID, &rule.Name, &rule.Threshold,
+		&rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
@@ -165,27 +117,12 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var result sql.Result
-	var err error
-
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB
-		result, err = db.DB.Exec(`
-			UPDATE policy_rules
-			SET name=$1, threshold=$2, action=$3, duration=$4, tag=$5
-			WHERE id=$6`,
-			rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag, id,
-		)
-	} else {
-		// SQLite
-		result, err = db.DB.Exec(`
-			UPDATE policy_rules
-			SET name=?, threshold=?, action=?, duration=?, tag=?
-			WHERE id=?`,
-			rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag, id,
-		)
-	}
-
+	result, err := db.DB.Exec(`
+		UPDATE policy_rules
+		SET name=$1, threshold=$2, action=$3, duration=$4, tag=$5
+		WHERE id=$6`,
+		rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag, id,
+	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -211,23 +148,11 @@ func DeleteRule(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	var rule models.PolicyRule
-	var err error
-
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB
-		err = db.DB.QueryRow(`
-			SELECT id, name, threshold, action, duration, tag, created_at
-			FROM policy_rules WHERE id = $1`, id,
-		).Scan(&rule.ID, &rule.Name, &rule.Threshold,
-			&rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
-	} else {
-		// SQLite
-		err = db.DB.QueryRow(`
-			SELECT id, name, threshold, action, duration, tag, created_at
-			FROM policy_rules WHERE id = ?`, id,
-		).Scan(&rule.ID, &rule.Name, &rule.Threshold,
-			&rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
-	}
+	err := db.DB.QueryRow(`
+		SELECT id, name, threshold, action, duration, tag, created_at
+		FROM policy_rules WHERE id = $1`, id,
+	).Scan(&rule.ID, &rule.Name, &rule.Threshold,
+		&rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
@@ -238,13 +163,7 @@ func DeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var result sql.Result
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		result, err = db.DB.Exec("DELETE FROM policy_rules WHERE id = $1", id)
-	} else {
-		result, err = db.DB.Exec("DELETE FROM policy_rules WHERE id = ?", id)
-	}
-
+	result, err := db.DB.Exec("DELETE FROM policy_rules WHERE id = $1", id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

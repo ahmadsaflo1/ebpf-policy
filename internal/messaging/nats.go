@@ -4,7 +4,6 @@ package messaging
 
 import (
 	"log"
-	"os"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -16,12 +15,11 @@ var NC *nats.Conn
 // shuttingDown suppresses disconnect/reconnect log noise during a clean shutdown.
 var shuttingDown bool
 
-// Init connects to the NATS server specified by the NATS_URL environment
-// variable, falling back to nats.DefaultURL when the variable is unset.
-// Reconnects indefinitely (5 s between attempts). Calls log.Fatal on failure.
-func Init() {
+// Init connects to the NATS server at natsURL, falling back to nats.DefaultURL
+// when natsURL is empty. Reconnects indefinitely (5 s between attempts).
+// Calls log.Fatal on failure.
+func Init(natsURL string) {
 	var err error
-	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" {
 		natsURL = nats.DefaultURL
 	}

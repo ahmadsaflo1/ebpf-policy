@@ -2,7 +2,7 @@
 
 > Distributed DDoS mitigation and traffic rate-limiting system with kernel-level packet filtering and centralized real-time policy management.
 
-**eBPF/XDP** filters packets directly at the network driver level — long before they reach the application layer — while policy decisions are distributed in real time via **NATS** to all running agents. System and traffic metrics are persisted to **TimescaleDB** (or SQLite) and queryable via REST or the built-in web UI.
+**eBPF/XDP** filters packets directly at the network driver level — long before they reach the application layer — while policy decisions are distributed in real time via **NATS** to all running agents. System and traffic metrics are persisted to **TimescaleDB** and queryable via REST or the built-in web UI.
 
 ---
 
@@ -15,6 +15,7 @@
 - [Environment Tags](#environment-tags)
 - [Requirements](#requirements)
 - [Installation](#installation)
+- [Configuration](#configuration)
 - [Quick Start (using Make)](#quick-start-using-make)
 - [Manual Build](#manual-build)
 - [Running the System](#running-the-system)
@@ -32,8 +33,7 @@
 ┌──────────────────────────────┐
 │         Policy Server        │   Control Plane
 │   REST API :8080             │
-│   Web UI :8080/              │
-│   SQLite / TimescaleDB       │
+│   TimescaleDB                │
 │   Policy publishing          │
 │   Metrics collection         │
 └──────────────┬───────────────┘
@@ -43,17 +43,26 @@
        ┌───────┴────────┐
        │                │
 ┌──────▼──────┐  ┌──────▼──────┐
-│   Agent 1   │  │   Agent N   │   Edge Nodes
-│   (eBPF)    │  │   (eBPF)    │
+│  Webserver  │  │  Webserver  │   Edge Nodes
+│  + Agent    │  │  + Agent    │
+│  UI :4040   │  │  UI :4040   │
+│  (eBPF)     │  │  (eBPF)     │
 └─────────────┘  └─────────────┘
 ```
+
+### Binaries
+
+| Binary | Description |
+|--------|-------------|
+| **`policy-server`** | Central control plane — manages rules via REST API, persists data to TimescaleDB, distributes changes via NATS |
+| **`webserver`** | Serves the web UI on port 4040 and runs the embedded eBPF/XDP agent — configured via `server.conf` |
 
 ### Components
 
 | Component | Description |
 |-----------|-------------|
-| **Server** | Manages policies via REST API, serves the web UI, persists rules and metrics to SQLite or TimescaleDB, and distributes changes via NATS |
-| **Agent** | Runs on each node, loads the eBPF program into the kernel, reports per-IP traffic stats and system metrics |
+| **Policy Server** | Stores rules, collects metrics, pushes updates to agents via NATS |
+| **Agent** | Embedded in the webserver binary — loads the eBPF program, enforces rules, reports metrics |
 | **eBPF/XDP** | Kernel-space C program that filters packets at the network interface with microsecond latency |
 | **NATS** | Message broker for policy distribution and metrics aggregation across all agents |
 
@@ -128,7 +137,7 @@ The XDP program maintains four LRU hash maps (max 10 000 entries each), keyed by
 
 | Map | Key | Value | Purpose |
 |-----|-----|-------|---------|
-| `request_count` | `u32` src IP | `{count, last_seen}` | Cumulative packet counter read by the Go agent every 10 s to calculate req/s |
+| `request_count` | `u32` src IP | `{count, last_seen}` | Cumulative packet counter read by the agent every 10 s to calculate req/s |
 | `block_list` | `u32` src IP | `u64` ktime expiry (ns) | Hard block — packets are dropped until the expiry timestamp passes |
 | `rate_limit_map` | `u32` src IP | `{tokens, last_refill}` | Token-bucket state; the XDP program itself drops packets when tokens reach 0 |
 | `latency_map` | `u32` src IP | `{total_ns, count, min_ns, max_ns}` | Per-packet XDP processing latency accumulated for the agent's latency reports |
@@ -169,17 +178,22 @@ Rule cache is saved to `/tmp/ebpf-policy-rules.json` and updated on every succes
 
 ## Environment Tags
 
-Rules can be scoped to a specific environment via the `tag` field. Agents filter rules based on their `ENV` variable:
+Rules can be scoped to a specific environment via the `tag` field. Agents filter rules based on the `env` setting in `server.conf`:
 
-- **Global rule** (empty `tag`): sent to and applied by all agents.
-- **Tagged rule** (e.g. `tag: "production"`): sent only to agents where `ENV=production`.
+- **Global rule** (empty `tag`): applied by all agents regardless of environment.
+- **Tagged rule** (e.g. `tag: "production"`): applied only by agents where `env = "production"`.
 
-```bash
+Set the environment in `server.conf`:
+
+```toml
 # Production agent — receives global rules + "production" rules
-sudo ENV=production AGENT_ID=prod-agent-1 ./policy-agent
+env = "production"
 
 # Staging agent — receives global rules + "staging" rules
-sudo ENV=staging AGENT_ID=staging-agent-1 ./policy-agent
+env = "staging"
+
+# Empty (default) — receives ALL rules
+env = ""
 ```
 
 ---
@@ -215,8 +229,6 @@ sudo apt install -y clang llvm libbpf-dev \
 > ```
 
 ### 2. Go 1.25+
-
-Download and install the latest Go release (this project requires **Go 1.25 or newer**):
 
 ```bash
 wget https://go.dev/dl/go1.25.9.linux-amd64.tar.gz
@@ -281,7 +293,33 @@ The agent monitors a specific network interface. Run this command to see the ava
 ip link show
 ```
 
-Common names are `eth0`, `ens3`, `ens5`, `enp0s3`. Note the name — you will need it when starting the agent.
+Common names: `eth0`, `ens3`, `ens5`, `enp0s5`. Note the name — you will need it in `server.conf`.
+
+---
+
+## Configuration
+
+The webserver and agent are configured through a single TOML file (`server.conf` by default).
+
+```toml
+# Environment tag for this agent — filters which rules are applied.
+# Leave empty to receive ALL rules (global + all tagged).
+env = "production"
+
+[server]
+port    = 4040          # Web UI port
+web_dir = "web/public"  # Static files directory
+
+[nats]
+url = "nats://localhost:4222"   # NATS broker address
+
+[agent]
+interface  = "enp0s5"                  # Network interface for eBPF (see: ip link show)
+agent_id   = "agent-001"               # Unique name for this agent
+server_url = "http://localhost:8080"   # Policy server REST API URL
+```
+
+> If `agent.interface` is left empty, the webserver starts without the eBPF agent — useful for development or when running without root access.
 
 ---
 
@@ -293,26 +331,21 @@ The Makefile wraps all steps. Infrastructure (TimescaleDB, NATS, Grafana) runs i
 # 1. Start infrastructure (TimescaleDB, NATS, Grafana)
 make start-infra
 
-# 2. Build server and agent (compiles eBPF C code + Go binaries)
+# 2. Build all binaries (compiles eBPF C code + Go binaries)
 make build
 
-# 3. In one terminal — start the server (connects to TimescaleDB)
+# 3. In one terminal — start the policy server
 make run-server
 
-# 4. In a second terminal — start the agent
-#    Replace eth0 with your actual interface name (see: ip link show)
-make run-agent INTERFACE=eth0 AGENT_ID=my-agent
+# 4. In a second terminal — start the webserver + agent
+#    Edit server.conf first to set the correct interface (ip link show)
+make run-webserver
 ```
 
-Override any variable to match your environment:
+Use a custom config file:
 
 ```bash
-make run-agent \
-    INTERFACE=<iface> \
-    AGENT_ID=<name> \
-    ENV=<tag> \
-    SERVER_URL=http://<server-ip>:8080 \
-    NATS_URL=nats://<server-ip>:4222
+make run-webserver CONFIG=prod.conf
 ```
 
 ### Verify it is working
@@ -321,24 +354,34 @@ make run-agent \
 # Check that all containers are running
 make status
 
-# Open the web UI in a browser
+# Web UI
+http://<webserver-ip>:4040
+
+# Policy REST API
 http://<server-ip>:8080
 
-# Open Grafana (login: admin / admin)
+# Grafana (login: admin / admin)
 http://<server-ip>:3000
 ```
 
-### Other useful Make targets
+### Make targets
 
 ```bash
-make status        # Show running infrastructure containers
-make logs-db       # Stream TimescaleDB logs
-make logs-nats     # Stream NATS logs
-make logs-grafana  # Stream Grafana logs
-make stop-infra    # Stop infrastructure containers
-make db-flush      # Remove TimescaleDB volume (wipes all data)
-make clean         # Remove build artifacts
-make help          # List all targets with descriptions
+make build           # Build policy-server and webserver (includes eBPF)
+make build-server    # Build policy server only
+make build-webserver # Build webserver + agent (includes eBPF compilation)
+make run-server      # Run the policy server
+make run-webserver   # Run webserver + agent (requires sudo for eBPF)
+make start-infra     # Start TimescaleDB, NATS, and Grafana containers
+make stop-infra      # Stop infrastructure containers
+make stop            # Stop all processes and containers
+make status          # Show running infrastructure containers
+make logs-db         # Stream TimescaleDB logs
+make logs-nats       # Stream NATS logs
+make logs-grafana    # Stream Grafana logs
+make db-flush        # Remove TimescaleDB volume (wipes all data)
+make clean           # Remove build artifacts
+make help            # List all targets with descriptions
 ```
 
 ---
@@ -353,13 +396,13 @@ Use this if you want to build without the Makefile shortcuts.
 docker compose up -d
 ```
 
-### 2. Build server
+### 2. Build policy server
 
 ```bash
 go build -o policy-server ./cmd/server/
 ```
 
-### 3. Build agent (compiles eBPF + generates Go bindings + builds binary)
+### 3. Build webserver + agent (compiles eBPF + generates Go bindings + builds binary)
 
 ```bash
 # Compile the eBPF C program to bytecode
@@ -368,8 +411,8 @@ cd ebpf && make && cd ..
 # Generate Go bindings from the compiled bytecode
 go generate ./internal/agent/ebpf
 
-# Build the agent binary
-go build -o policy-agent ./cmd/agent/
+# Build the webserver binary (includes the agent)
+go build -o webserver ./cmd/webserver/
 ```
 
 | Generated file | Description |
@@ -383,10 +426,10 @@ go build -o policy-agent ./cmd/agent/
 
 ## Running the System
 
-### Server
+### Policy Server
 
 ```bash
-USE_TIMESCALE=true ./policy-server
+./policy-server
 ```
 
 | Environment Variable | Default | Description |
@@ -400,32 +443,27 @@ USE_TIMESCALE=true ./policy-server
 | `POSTGRES_PASSWORD` | `ebpf_secret_password` | Database password |
 | `POSTGRES_DB` | `policy_metrics` | Database name |
 
-### Agent
+### Webserver + Agent
 
 Requires root privileges to attach the XDP program to the network interface.
 
 ```bash
-sudo INTERFACE=<interface> \
-     AGENT_ID=<agent-name> \
-     SERVER_URL=http://<server-ip>:8080 \
-     NATS_URL=nats://<server-ip>:4222 \
-     ENV=<environment> \
-     ./policy-agent
+sudo ./webserver -c server.conf
 ```
 
-| Environment Variable | Default | Description |
-|----------------------|---------|-------------|
-| `INTERFACE` | `eth0` | Network interface to monitor (e.g. `ens5`) |
-| `AGENT_ID` | `agent-001` | Unique identifier for this agent instance |
-| `SERVER_URL` | `http://<server-ip>:8080` | URL of the policy server |
-| `NATS_URL` | `nats://<server-ip>:4222` | NATS broker address |
-| `ENV` | *(empty — global)* | Environment tag for rule filtering |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-c` | *(none)* | Path to TOML config file |
+| `-l` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `-f` | `text` | Log format: `text` or `json` |
+
+All settings are in `server.conf` — see [Configuration](#configuration).
 
 ---
 
 ## Web UI
 
-The server ships a built-in web interface served at `http://<server>:8080/`. No extra setup is needed.
+The webserver serves a built-in web interface at `http://<webserver>:4040/`.
 
 ### Tabs
 
@@ -435,7 +473,7 @@ The server ships a built-in web interface served at `http://<server>:8080/`. No 
 | **Traffic** | Top clients by req/s / blocks / rate-limits; per-IP search; aggregated stats over a time range |
 | **System** | Recent and aggregated system metrics (CPU, memory, disk, network I/O) per agent |
 
-A live health indicator in the header reflects the server's `/health` endpoint status in real time.
+A live health indicator in the header reflects the policy server's `/health` endpoint status in real time.
 
 ---
 
@@ -567,27 +605,25 @@ tag         TEXT        NOT NULL DEFAULT ''   -- empty = global rule
 created_at  TIMESTAMPTZ DEFAULT NOW()
 ```
 
-**`client_stats`** — per-IP traffic metrics from agents (hypertable in TimescaleDB)
+**`client_stats`** — per-IP traffic metrics from agents (hypertable)
 
 ```sql
-time           TIMESTAMPTZ NOT NULL    -- hypertable partition key
+time           TIMESTAMPTZ NOT NULL
 agent_id       TEXT        NOT NULL
 ip             INET        NOT NULL
 req_per_sec    INTEGER     NOT NULL
-blocked        INTEGER     NOT NULL    -- 1 = currently blocked, 0 = not blocked
-rate_limited   INTEGER     NOT NULL    -- 1 = rate-limited, 0 = not rate-limited
-passed         INTEGER     NOT NULL    -- packets allowed through
+blocked        INTEGER     NOT NULL    -- 1 = currently blocked
+rate_limited   INTEGER     NOT NULL    -- 1 = rate-limited
+passed         INTEGER     NOT NULL
 avg_latency_us BIGINT      DEFAULT 0   -- microseconds
 min_latency_us BIGINT      DEFAULT 0
 max_latency_us BIGINT      DEFAULT 0
 ```
 
-Indexes: `(ip, time DESC)`, `(agent_id, time DESC)`
-
-**`system_metrics`** — agent system performance (hypertable in TimescaleDB)
+**`system_metrics`** — agent system performance (hypertable)
 
 ```sql
-time             TIMESTAMPTZ NOT NULL    -- hypertable partition key
+time             TIMESTAMPTZ NOT NULL
 agent_id         TEXT        NOT NULL
 cpu_percent      INTEGER     NOT NULL    -- millipercent (×1000, e.g. 72500 = 72.5%)
 memory_percent   INTEGER     NOT NULL    -- millipercent (×1000)
@@ -600,8 +636,6 @@ net_bytes_sent   BIGINT      NOT NULL
 net_bytes_recv   BIGINT      NOT NULL
 ```
 
-Index: `(agent_id, time DESC)`
-
 ---
 
 ## Technologies
@@ -609,10 +643,10 @@ Index: `(agent_id, time DESC)`
 | Technology | Usage |
 |------------|-------|
 | [cilium/ebpf](https://github.com/cilium/ebpf) | Loads and manages eBPF programs from Go |
-| [NATS](https://nats.io) | Distributed pub/sub messaging (JetStream) |
+| [NATS](https://nats.io) | Distributed pub/sub messaging |
+| [BurntSushi/toml](https://github.com/BurntSushi/toml) | TOML configuration file parsing |
 | Go stdlib `net/http` | HTTP server and REST API routing |
-| [TimescaleDB](https://www.timescale.com) | Time-series PostgreSQL for metrics (default) |
-| [SQLite](https://sqlite.org) | Lightweight fallback database |
+| [TimescaleDB](https://www.timescale.com) | Time-series PostgreSQL for metrics |
 | `/proc` + `syscall.Statfs` | Linux-native system metrics (CPU, memory, disk, network I/O) |
-| [Alpine.js](https://alpinejs.dev) + [Tailwind CSS](https://tailwindcss.com) | Reactive web UI (dark theme, served by the server) |
+| [Alpine.js](https://alpinejs.dev) + [Tailwind CSS](https://tailwindcss.com) | Reactive web UI (dark theme) |
 | eBPF/XDP | Kernel-level packet filtering with minimal overhead |
