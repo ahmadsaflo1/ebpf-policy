@@ -8,10 +8,24 @@ SERVER_URL ?= http://localhost:8080
 NATS_URL ?= nats://localhost:4222
 
 build: build-server build-agent
+	@echo ""
+	@echo " Build complete: server and agent ready."
 
-start: start-infra run-server 
+start: start-infra run-server
 
 stop: stop-infra
+	@echo "Stopping server and agent..."
+	-pkill -f ./policy-server
+	-pkill -f ./policy-agent
+	@echo "Done."
+
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -f policy-server policy-agent
+	cd ebpf && make clean
+	rm -f internal/agent/ebpf/policy_bpf*.go
+	rm -f internal/agent/ebpf/policy_bpf*.o
+	@echo "Clean done."
 
 help:
 	@echo 'Usage: make [target] [VARIABLE=value]'
@@ -47,7 +61,8 @@ help:
 
 build-server:
 	@echo "Building policy server..."
-	go build -o server ./cmd/server/
+	go build -o policy-server ./cmd/server/
+	@echo "Server binary ready: ./policy-server"
 
 build-agent:
 	@echo "Building eBPF program..."
@@ -55,13 +70,14 @@ build-agent:
 	@echo "Generating Go bindings..."
 	go generate ./internal/agent/ebpf
 	@echo "Building agent..."
-	go build -o agent ./cmd/agent/
+	go build -o policy-agent ./cmd/agent/
+	@echo "Agent binary ready: ./policy-agent"
 
 start-infra:
 	@echo "Starting infrastructure (TimescaleDB + NATS + Grafana)..."
 	docker compose up -d
 	@echo ""
-	@echo "✅ Infrastructure started!"
+	@echo "   Infrastructure started!"
 	@echo "   TimescaleDB: localhost:5432"
 	@echo "   NATS: localhost:4222"
 	@echo "   NATS Monitoring: http://localhost:8222"
@@ -70,12 +86,16 @@ start-infra:
 stop-infra:
 	@echo "Stopping infrastructure..."
 	docker compose down
+	@echo "Infrastructure stopped."
 
 run-server:
 	@echo "Starting policy server with TimescaleDB..."
 	@echo "API: http://localhost:8080"
 	@echo "Dashboard: http://localhost:3000 (username: admin, password: admin)"
-	USE_TIMESCALE=true ./server
+	@echo ""
+	@echo "Start the agent separately with 'make run-agent' to connect to this server."
+	@echo ""
+	USE_TIMESCALE=true ./policy-server
 
 run-agent:
 	@echo "Starting agent with configuration:"
@@ -90,23 +110,20 @@ run-agent:
 	     ENV=$(ENV) \
 	     SERVER_URL=$(SERVER_URL) \
 	     NATS_URL=$(NATS_URL) \
-	     ./agent
+	     ./policy-agent
 
 status:
 	@echo "Infrastructure Status:"
 	@docker ps --filter "name=timescaledb" --filter "name=nats" --filter "name=grafana" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
 logs-db:
+	@echo "Streaming TimescaleDB logs (Ctrl+C to exit)..."
 	docker logs -f timescaledb
 
 logs-nats:
+	@echo "Streaming NATS logs (Ctrl+C to exit)..."
 	docker logs -f nats
 
 logs-grafana:
+	@echo "Streaming Grafana logs (Ctrl+C to exit)..."
 	docker logs -f grafana
-
-clean:
-	@echo "Cleaning build artifacts..."
-	rm -f server agent
-	cd ebpf && make clean
-	rm -f internal/agent/ebpf/policy_bpf*.go
-	rm -f internal/agent/ebpf/policy_bpf*.o
