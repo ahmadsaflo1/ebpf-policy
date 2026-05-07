@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -21,9 +22,48 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/web"
 )
 
+type serverConfig struct {
+	port       string
+	natsURL    string
+	pgHost     string
+	pgPort     string
+	pgUser     string
+	pgPassword string
+	pgDB       string
+}
+
+func loadConfig() serverConfig {
+	var cfg serverConfig
+	flag.StringVar(&cfg.port, "port", envOr("PORT", "8080"), "HTTP listen port")
+	flag.StringVar(&cfg.natsURL, "nats-url", envOr("NATS_URL", "nats://localhost:4222"), "NATS server URL")
+	flag.StringVar(&cfg.pgHost, "pg-host", envOr("POSTGRES_HOST", "localhost"), "PostgreSQL host")
+	flag.StringVar(&cfg.pgPort, "pg-port", envOr("POSTGRES_PORT", "5432"), "PostgreSQL port")
+	flag.StringVar(&cfg.pgUser, "pg-user", envOr("POSTGRES_USER", "ebpf_user"), "PostgreSQL user")
+	flag.StringVar(&cfg.pgPassword, "pg-password", envOr("POSTGRES_PASSWORD", "ebpf_secret_password"), "PostgreSQL password")
+	flag.StringVar(&cfg.pgDB, "pg-db", envOr("POSTGRES_DB", "policy_metrics"), "PostgreSQL database name")
+	flag.Parse()
+	return cfg
+}
+
+// envOr returns the environment variable value or def when unset.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 func main() {
-	db.Init()
-	messaging.Init()
+	cfg := loadConfig()
+
+	db.Init(db.Config{
+		Host:     cfg.pgHost,
+		Port:     cfg.pgPort,
+		User:     cfg.pgUser,
+		Password: cfg.pgPassword,
+		DBName:   cfg.pgDB,
+	})
+	messaging.Init(cfg.natsURL)
 	defer messaging.Close()
 
 	metrics.StartCollector()
@@ -54,7 +94,7 @@ func main() {
 	mux.HandleFunc("GET /api/system/metrics", api.GetSystemMetrics)
 
 	srv := &http.Server{
-		Addr:    ":" + getPort(),
+		Addr:    ":" + cfg.port,
 		Handler: mux,
 	}
 
@@ -77,9 +117,3 @@ func main() {
 	log.Println("Server gracefully stopped")
 }
 
-func getPort() string {
-	if p := os.Getenv("PORT"); p != "" {
-		return p
-	}
-	return "8080"
-}

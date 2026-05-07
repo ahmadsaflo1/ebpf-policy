@@ -4,24 +4,16 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
 
 	_ "github.com/lib/pq"
 )
 
-// InitTimescale initializes connection to TimescaleDB and creates schema
-func InitTimescale() {
+// InitTimescale initializes connection to TimescaleDB and creates schema.
+func InitTimescale(cfg Config) {
 	var err error
-	
-	// Get connection details from environment or use defaults
-	host := getEnv("POSTGRES_HOST", "localhost")
-	port := getEnv("POSTGRES_PORT", "5432")
-	user := getEnv("POSTGRES_USER", "ebpf_user")
-	password := getEnv("POSTGRES_PASSWORD", "ebpf_secret_password")
-	dbname := getEnv("POSTGRES_DB", "policy_metrics")
 
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName)
 
 	DB, err = sql.Open("postgres", connStr)
 	if err != nil {
@@ -152,11 +144,3 @@ func createTimescaleTables() error {
 	return nil
 }
 
-// getEnv gets environment variable or returns default value
-func getEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	return value
-}

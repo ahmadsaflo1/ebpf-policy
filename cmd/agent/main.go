@@ -6,6 +6,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net"
 	"os"
@@ -28,9 +29,17 @@ var serverAvailable = true
 func main() {
 	log.Println("Starting Policy Agent ...")
 
-	cfg := config.Load()
+	var opts config.Opts
+	flag.StringVar(&opts.NatsURL,   "nats-url",    "", "NATS server URL (default: $NATS_URL or nats://localhost:4222)")
+	flag.StringVar(&opts.ServerURL, "server-url",  "", "Policy server URL (default: $SERVER_URL or http://localhost:8080)")
+	flag.StringVar(&opts.AgentID,   "agent-id",    "", "Agent identifier (default: $AGENT_ID or agent-001)")
+	flag.StringVar(&opts.Interface, "interface",   "", "Network interface for eBPF (default: $INTERFACE or eth0)")
+	flag.StringVar(&opts.Env,       "env",         "", "Environment tag (default: $ENV)")
+	flag.Parse()
 
-	messaging.Init()
+	cfg := config.Load(opts)
+
+	messaging.Init(cfg.NatsURL)
 	defer messaging.Close()
 
 	program, err := ebpfloader.Load(cfg.Interface)
