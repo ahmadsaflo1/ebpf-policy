@@ -1,4 +1,4 @@
-.PHONY: build start stop help build-server build-agent start-infra stop-infra run-server run-agent
+.PHONY: build start stop help build-server build-agent start-infra stop-infra run-server run-agent db-flush
 
 # Default values (can be overridden)
 INTERFACE ?= eth0
@@ -15,8 +15,8 @@ start: start-infra run-server
 
 stop: stop-infra
 	@echo "Stopping server and agent..."
-	-pkill -f ./policy-server
-	-pkill -f ./policy-agent
+	- sudo pkill -f ./policy-server
+	- sudo pkill -f ./policy-agent
 	@echo "Done."
 
 clean:
@@ -78,10 +78,6 @@ start-infra:
 	docker compose up -d
 	@echo ""
 	@echo "   Infrastructure started!"
-	@echo "   TimescaleDB: localhost:5432"
-	@echo "   NATS: localhost:4222"
-	@echo "   NATS Monitoring: http://localhost:8222"
-	@echo "   Grafana: http://localhost:3000 (username: admin, password: admin)"
 
 stop-infra:
 	@echo "Stopping infrastructure..."
@@ -91,7 +87,7 @@ stop-infra:
 run-server:
 	@echo "Starting policy server with TimescaleDB..."
 	@echo "API: http://localhost:8080"
-	@echo "Dashboard: http://localhost:3000 (username: admin, password: admin)"
+	@echo "Grafana: http://localhost:3000 (username: admin, password: admin)"
 	@echo ""
 	@echo "Start the agent separately with 'make run-agent' to connect to this server."
 	@echo ""
@@ -111,6 +107,12 @@ run-agent:
 	     SERVER_URL=$(SERVER_URL) \
 	     NATS_URL=$(NATS_URL) \
 	     ./policy-agent
+
+db-flush:
+	@echo "Removing database volume..."
+	docker stop timescaledb && docker rm timescaledb
+	docker volume rm ebpf-policy_timescaledb-data
+	@echo "Database volume removed. Run 'make start' to start fresh."
 
 status:
 	@echo "Infrastructure Status:"
