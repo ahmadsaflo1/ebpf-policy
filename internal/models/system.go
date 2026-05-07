@@ -5,13 +5,13 @@ import "time"
 
 // SystemMetrics represents system performance data collected by the agent
 type SystemMetrics struct {
-	CPUPercent    float64 `json:"cpu_percent"`
-	MemoryPercent float64 `json:"memory_percent"`
+	CPUPercent    int64 `json:"cpu_percent"`
+	MemoryPercent int64 `json:"memory_percent"`
 	MemoryUsedMB  uint64  `json:"memory_used_mb"`
 	MemoryTotalMB uint64  `json:"memory_total_mb"`
 	DiskUsedGB    uint64  `json:"disk_used_gb"`
 	DiskTotalGB   uint64  `json:"disk_total_gb"`
-	DiskPercent   float64 `json:"disk_percent"`
+	DiskPercent   int64 `json:"disk_percent"`
 	NetBytesSent  uint64  `json:"net_bytes_sent"`
 	NetBytesRecv  uint64  `json:"net_bytes_recv"`
 }

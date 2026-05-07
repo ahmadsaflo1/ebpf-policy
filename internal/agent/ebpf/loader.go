@@ -199,22 +199,21 @@ func (p *PolicyProgram) GetAllLatencyStats() (map[string]*LatencyStats, error) {
 }
 
 // GetAvgLatency calculates average latency for an IP in microseconds
-func (stats *LatencyStats) GetAvgLatencyUs() float64 {
+func (stats *LatencyStats) GetAvgLatencyUs() int64 {
     if stats.PacketCount == 0 {
         return 0
     }
-    avgNs := float64(stats.TotalLatencyNs) / float64(stats.PacketCount)
-    return avgNs / 1000.0  // Convert to microseconds
+    return int64(stats.TotalLatencyNs) / int64(stats.PacketCount) / 1000
 }
 
 // GetMinLatencyUs returns minimum latency in microseconds
-func (stats *LatencyStats) GetMinLatencyUs() float64 {
-    return float64(stats.MinLatencyNs) / 1000.0
+func (stats *LatencyStats) GetMinLatencyUs() int64 {
+    return int64(stats.MinLatencyNs) / 1000
 }
 
 // GetMaxLatencyUs returns maximum latency in microseconds
-func (stats *LatencyStats) GetMaxLatencyUs() float64 {
-    return float64(stats.MaxLatencyNs) / 1000.0
+func (stats *LatencyStats) GetMaxLatencyUs() int64 {
+    return int64(stats.MaxLatencyNs) / 1000
 }
 
 // AddProtectedPort registers a TCP/UDP destination port for DDoS enforcement.

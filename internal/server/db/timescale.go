@@ -75,9 +75,9 @@ func createTimescaleTables() error {
 		blocked        INTEGER NOT NULL,
 		rate_limited   INTEGER NOT NULL DEFAULT 0,
 		passed         INTEGER NOT NULL,
-		avg_latency_us REAL    DEFAULT 0,
-		min_latency_us REAL    DEFAULT 0,
-		max_latency_us REAL    DEFAULT 0
+		avg_latency_us BIGINT  DEFAULT 0,
+		min_latency_us BIGINT  DEFAULT 0,
+		max_latency_us BIGINT  DEFAULT 0
 	)`)
 	if err != nil {
 		return fmt.Errorf("failed to create client_stats: %w", err)
@@ -105,13 +105,13 @@ func createTimescaleTables() error {
 	CREATE TABLE IF NOT EXISTS system_metrics (
 		time             TIMESTAMPTZ NOT NULL,
 		agent_id         TEXT    NOT NULL,
-		cpu_percent      REAL    NOT NULL,
-		memory_percent   REAL    NOT NULL,
+		cpu_percent      INTEGER NOT NULL,
+		memory_percent   INTEGER NOT NULL,
 		memory_used_mb   INTEGER NOT NULL,
 		memory_total_mb  INTEGER NOT NULL,
 		disk_used_gb     INTEGER NOT NULL,
 		disk_total_gb    INTEGER NOT NULL,
-		disk_percent     REAL    NOT NULL,
+		disk_percent     INTEGER NOT NULL,
 		net_bytes_sent   BIGINT  NOT NULL,
 		net_bytes_recv   BIGINT  NOT NULL
 	)`)
