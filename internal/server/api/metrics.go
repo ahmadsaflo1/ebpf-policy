@@ -1,10 +1,7 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
@@ -25,48 +22,24 @@ func SearchClients(w http.ResponseWriter, r *http.Request) {
 		offset = "0"
 	}
 
-	var query string
-	var args []interface{}
-
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		query = `
-			SELECT
-				agent_id,
-				ip::text,
-				req_per_sec,
-				blocked,
-				rate_limited,
-				passed,
-				avg_latency_us,
-				min_latency_us,
-				max_latency_us,
-				time
-			FROM client_stats
-			WHERE ($1 = '' OR ip::text LIKE $2)
-			  AND ($3 = '' OR agent_id = $4)
-			ORDER BY time DESC
-			LIMIT $5 OFFSET $6`
-		args = []interface{}{ip, "%" + ip + "%", agent, agent, limit, offset}
-	} else {
-		query = `
-			SELECT
-				agent_id,
-				ip,
-				req_per_sec,
-				blocked,
-				rate_limited,
-				passed,
-				avg_latency_us,
-				min_latency_us,
-				max_latency_us,
-				recorded_at
-			FROM client_stats
-			WHERE (? = '' OR ip LIKE ?)
-			  AND (? = '' OR agent_id = ?)
-			ORDER BY recorded_at DESC
-			LIMIT ? OFFSET ?`
-		args = []interface{}{ip, "%" + ip + "%", agent, agent, limit, offset}
-	}
+	query := `
+		SELECT
+			agent_id,
+			ip::text,
+			req_per_sec,
+			blocked,
+			rate_limited,
+			passed,
+			avg_latency_us,
+			min_latency_us,
+			max_latency_us,
+			time
+		FROM client_stats
+		WHERE ($1 = '' OR ip::text LIKE $2)
+		  AND ($3 = '' OR agent_id = $4)
+		ORDER BY time DESC
+		LIMIT $5 OFFSET $6`
+	args := []interface{}{ip, "%" + ip + "%", agent, agent, limit, offset}
 
 	rows, err := db.DB.Query(query, args...)
 	if err != nil {
@@ -122,8 +95,8 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 		timerange = "1h"
 	}
 
-	var query string
-	var args []interface{}
+	interval := parseTimerangeToInterval(timerange)
+
 	var resultIP string
 	var totalRecords int
 	var avgReqPerSec float64
@@ -132,84 +105,36 @@ func GetAggregatedMetrics(w http.ResponseWriter, r *http.Request) {
 	var avgLatency, minLatency, maxLatency int64
 	var firstSeen, lastSeen time.Time
 
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		interval := parseTimerangeToInterval(timerange)
-
-		query = `
-			SELECT
-				ip::text,
-				COUNT(*) as total_records,
-				AVG(req_per_sec) as avg_req_per_sec,
-				MAX(req_per_sec) as max_req_per_sec,
-				MIN(req_per_sec) as min_req_per_sec,
-				SUM(blocked) as total_blocked,
-				SUM(rate_limited) as total_rate_limited,
-				SUM(passed) as total_passed,
-				CAST(ROUND(AVG(avg_latency_us)) AS BIGINT) as avg_latency,
-				MIN(min_latency_us) as min_latency,
-				MAX(max_latency_us) as max_latency,
-				MIN(time) as first_seen,
-				MAX(time) as last_seen
-			FROM client_stats
-			WHERE ip = $1::inet
-			  AND time > NOW() - $2::interval
-			GROUP BY ip`
-		args = []interface{}{ip, interval}
-
-		err := db.DB.QueryRow(query, args...).Scan(
-			&resultIP, &totalRecords, &avgReqPerSec, &maxReqPerSec, &minReqPerSec,
-			&totalBlocked, &totalRateLimited, &totalPassed, &avgLatency, &minLatency, &maxLatency,
-			&firstSeen, &lastSeen,
-		)
-		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{
-				"error": "no data found for this IP in the specified timerange",
-			})
-			return
-		}
-	} else {
-		duration, err := parseDuration(timerange)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid timerange format"})
-			return
-		}
-
-		query = `
-			SELECT
-				ip,
-				COUNT(*) as total_records,
-				AVG(req_per_sec) as avg_req_per_sec,
-				MAX(req_per_sec) as max_req_per_sec,
-				MIN(req_per_sec) as min_req_per_sec,
-				SUM(blocked) as total_blocked,
-				SUM(rate_limited) as total_rate_limited,
-				SUM(passed) as total_passed,
-				CAST(ROUND(AVG(avg_latency_us)) AS INTEGER) as avg_latency,
-				MIN(min_latency_us) as min_latency,
-				MAX(max_latency_us) as max_latency,
-				MIN(recorded_at) as first_seen,
-				MAX(recorded_at) as last_seen
-			FROM client_stats
-			WHERE ip = ?
-			  AND recorded_at > datetime('now', ?)
-			GROUP BY ip`
-		args = []interface{}{ip, duration}
-
-		var firstSeenStr, lastSeenStr string
-		err = db.DB.QueryRow(query, args...).Scan(
-			&resultIP, &totalRecords, &avgReqPerSec, &maxReqPerSec, &minReqPerSec,
-			&totalBlocked, &totalRateLimited, &totalPassed, &avgLatency, &minLatency, &maxLatency,
-			&firstSeenStr, &lastSeenStr,
-		)
-		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{
-				"error": "no data found for this IP in the specified timerange",
-			})
-			return
-		}
-
-		firstSeen, _ = time.Parse("2006-01-02 15:04:05", firstSeenStr)
-		lastSeen, _ = time.Parse("2006-01-02 15:04:05", lastSeenStr)
+	err := db.DB.QueryRow(`
+		SELECT
+			ip::text,
+			COUNT(*) as total_records,
+			AVG(req_per_sec) as avg_req_per_sec,
+			MAX(req_per_sec) as max_req_per_sec,
+			MIN(req_per_sec) as min_req_per_sec,
+			SUM(blocked) as total_blocked,
+			SUM(rate_limited) as total_rate_limited,
+			SUM(passed) as total_passed,
+			CAST(ROUND(AVG(avg_latency_us)) AS BIGINT) as avg_latency,
+			MIN(min_latency_us) as min_latency,
+			MAX(max_latency_us) as max_latency,
+			MIN(time) as first_seen,
+			MAX(time) as last_seen
+		FROM client_stats
+		WHERE ip = $1::inet
+		  AND time > NOW() - $2::interval
+		GROUP BY ip`,
+		ip, interval,
+	).Scan(
+		&resultIP, &totalRecords, &avgReqPerSec, &maxReqPerSec, &minReqPerSec,
+		&totalBlocked, &totalRateLimited, &totalPassed, &avgLatency, &minLatency, &maxLatency,
+		&firstSeen, &lastSeen,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "no data found for this IP in the specified timerange",
+		})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -260,52 +185,24 @@ func GetTopClients(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var query string
-	var args []interface{}
+	interval := parseTimerangeToInterval(timerange)
 
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		interval := parseTimerangeToInterval(timerange)
-
-		query = `
-			SELECT
-				ip::text,
-				AVG(req_per_sec) as avg_req_per_sec,
-				MAX(req_per_sec) as max_req_per_sec,
-				SUM(blocked) as total_blocked,
-				SUM(rate_limited) as total_rate_limited,
-				SUM(passed) as total_passed,
-				COUNT(*) as total_records
-			FROM client_stats
-			WHERE time > NOW() - $1::interval
-			GROUP BY ip
-			ORDER BY ` + orderColumn + ` DESC
-			LIMIT $2`
-		args = []interface{}{interval, limit}
-	} else {
-		duration, err := parseDuration(timerange)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid timerange format"})
-			return
-		}
-
-		query = `
-			SELECT
-				ip,
-				AVG(req_per_sec) as avg_req_per_sec,
-				MAX(req_per_sec) as max_req_per_sec,
-				SUM(blocked) as total_blocked,
-				SUM(rate_limited) as total_rate_limited,
-				SUM(passed) as total_passed,
-				COUNT(*) as total_records
-			FROM client_stats
-			WHERE recorded_at > datetime('now', ?)
-			GROUP BY ip
-			ORDER BY ` + orderColumn + ` DESC
-			LIMIT ?`
-		args = []interface{}{duration, limit}
-	}
-
-	rows, err := db.DB.Query(query, args...)
+	rows, err := db.DB.Query(`
+		SELECT
+			ip::text,
+			AVG(req_per_sec) as avg_req_per_sec,
+			MAX(req_per_sec) as max_req_per_sec,
+			SUM(blocked) as total_blocked,
+			SUM(rate_limited) as total_rate_limited,
+			SUM(passed) as total_passed,
+			COUNT(*) as total_records
+		FROM client_stats
+		WHERE time > NOW() - $1::interval
+		GROUP BY ip
+		ORDER BY `+orderColumn+` DESC
+		LIMIT $2`,
+		interval, limit,
+	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -350,47 +247,14 @@ func parseTimerangeToInterval(timerange string) string {
 	value := timerange[:len(timerange)-1]
 	unit := timerange[len(timerange)-1:]
 
-	sqlUnit := ""
 	switch unit {
 	case "m":
-		sqlUnit = "minutes"
+		return value + " minutes"
 	case "h":
-		sqlUnit = "hours"
+		return value + " hours"
 	case "d":
-		sqlUnit = "days"
+		return value + " days"
 	default:
 		return "1 hour"
 	}
-
-	return value + " " + sqlUnit
-}
-
-// parseDuration converts human-readable duration to SQLite interval format
-// Examples: "1h" -> "-1 hour", "30m" -> "-30 minutes", "7d" -> "-7 days"
-func parseDuration(timerange string) (string, error) {
-	if len(timerange) < 2 {
-		return "", fmt.Errorf("invalid timerange format")
-	}
-
-	value := timerange[:len(timerange)-1]
-	unit := timerange[len(timerange)-1:]
-
-	num, err := strconv.Atoi(value)
-	if err != nil {
-		return "", err
-	}
-
-	sqlUnit := ""
-	switch unit {
-	case "m":
-		sqlUnit = "minutes"
-	case "h":
-		sqlUnit = "hours"
-	case "d":
-		sqlUnit = "days"
-	default:
-		return "", fmt.Errorf("invalid timerange unit: %s", unit)
-	}
-
-	return "-" + strconv.Itoa(num) + " " + sqlUnit, nil
 }

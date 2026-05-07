@@ -95,7 +95,7 @@ run-server:
 	@echo ""
 	@echo "Start the agent separately with 'make run-agent' to connect to this server."
 	@echo ""
-	USE_TIMESCALE=true ./policy-server
+	./policy-server
 
 run-agent:
 	@echo "Starting agent with configuration:"

@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
@@ -22,62 +21,28 @@ func GetSystemMetrics(w http.ResponseWriter, r *http.Request) {
 		limit = "100"
 	}
 
-	var query string
-	var args []interface{}
+	interval := parseTimerangeToInterval(timerange)
 
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB
-		interval := parseTimerangeToInterval(timerange)
-
-		query = `
-			SELECT
-				agent_id,
-				cpu_percent,
-				memory_percent,
-				memory_used_mb,
-				memory_total_mb,
-				disk_used_gb,
-				disk_total_gb,
-				disk_percent,
-				net_bytes_sent,
-				net_bytes_recv,
-				time
-			FROM system_metrics
-			WHERE ($1 = '' OR agent_id = $2)
-			  AND time > NOW() - $3::interval
-			ORDER BY time DESC
-			LIMIT $4`
-		args = []interface{}{agent, agent, interval, limit}
-	} else {
-		// SQLite
-		duration, err := parseDuration(timerange)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid timerange format"})
-			return
-		}
-
-		query = `
-			SELECT
-				agent_id,
-				cpu_percent,
-				memory_percent,
-				memory_used_mb,
-				memory_total_mb,
-				disk_used_gb,
-				disk_total_gb,
-				disk_percent,
-				net_bytes_sent,
-				net_bytes_recv,
-				recorded_at
-			FROM system_metrics
-			WHERE (? = '' OR agent_id = ?)
-			  AND recorded_at > datetime('now', ?)
-			ORDER BY recorded_at DESC
-			LIMIT ?`
-		args = []interface{}{agent, agent, duration, limit}
-	}
-
-	rows, err := db.DB.Query(query, args...)
+	rows, err := db.DB.Query(`
+		SELECT
+			agent_id,
+			cpu_percent,
+			memory_percent,
+			memory_used_mb,
+			memory_total_mb,
+			disk_used_gb,
+			disk_total_gb,
+			disk_percent,
+			net_bytes_sent,
+			net_bytes_recv,
+			time
+		FROM system_metrics
+		WHERE ($1 = '' OR agent_id = $2)
+		  AND time > NOW() - $3::interval
+		ORDER BY time DESC
+		LIMIT $4`,
+		agent, agent, interval, limit,
+	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -135,81 +100,39 @@ func GetSystemMetricsAggregated(w http.ResponseWriter, r *http.Request) {
 		timerange = "1h"
 	}
 
-	var query string
-	var args []interface{}
+	interval := parseTimerangeToInterval(timerange)
+
 	var agentID string
 	var avgCPU, maxCPU, avgMem, maxMem, avgDisk, maxDisk int64
 	var totalBytesSent, totalBytesRecv uint64
 	var totalRecords int
 
-	if os.Getenv("USE_TIMESCALE") == "true" {
-		// TimescaleDB
-		interval := parseTimerangeToInterval(timerange)
-
-		query = `
-			SELECT
-				agent_id,
-				CAST(ROUND(AVG(cpu_percent)) AS INTEGER) as avg_cpu,
-				MAX(cpu_percent) as max_cpu,
-				CAST(ROUND(AVG(memory_percent)) AS INTEGER) as avg_mem,
-				MAX(memory_percent) as max_mem,
-				CAST(ROUND(AVG(disk_percent)) AS INTEGER) as avg_disk,
-				MAX(disk_percent) as max_disk,
-				SUM(net_bytes_sent) as total_bytes_sent,
-				SUM(net_bytes_recv) as total_bytes_recv,
-				COUNT(*) as total_records
-			FROM system_metrics
-			WHERE agent_id = $1
-			  AND time > NOW() - $2::interval
-			GROUP BY agent_id`
-		args = []interface{}{agent, interval}
-
-		err := db.DB.QueryRow(query, args...).Scan(
-			&agentID, &avgCPU, &maxCPU, &avgMem, &maxMem,
-			&avgDisk, &maxDisk, &totalBytesSent, &totalBytesRecv, &totalRecords,
-		)
-		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{
-				"error": "no system metrics found for this agent in the specified timerange",
-			})
-			return
-		}
-	} else {
-		// SQLite
-		duration, err := parseDuration(timerange)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid timerange format"})
-			return
-		}
-
-		query = `
-			SELECT
-				agent_id,
-				CAST(ROUND(AVG(cpu_percent)) AS INTEGER) as avg_cpu,
-				MAX(cpu_percent) as max_cpu,
-				CAST(ROUND(AVG(memory_percent)) AS INTEGER) as avg_mem,
-				MAX(memory_percent) as max_mem,
-				CAST(ROUND(AVG(disk_percent)) AS INTEGER) as avg_disk,
-				MAX(disk_percent) as max_disk,
-				SUM(net_bytes_sent) as total_bytes_sent,
-				SUM(net_bytes_recv) as total_bytes_recv,
-				COUNT(*) as total_records
-			FROM system_metrics
-			WHERE agent_id = ?
-			  AND recorded_at > datetime('now', ?)
-			GROUP BY agent_id`
-		args = []interface{}{agent, duration}
-
-		err = db.DB.QueryRow(query, args...).Scan(
-			&agentID, &avgCPU, &maxCPU, &avgMem, &maxMem,
-			&avgDisk, &maxDisk, &totalBytesSent, &totalBytesRecv, &totalRecords,
-		)
-		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{
-				"error": "no system metrics found for this agent in the specified timerange",
-			})
-			return
-		}
+	err := db.DB.QueryRow(`
+		SELECT
+			agent_id,
+			CAST(ROUND(AVG(cpu_percent)) AS INTEGER) as avg_cpu,
+			MAX(cpu_percent) as max_cpu,
+			CAST(ROUND(AVG(memory_percent)) AS INTEGER) as avg_mem,
+			MAX(memory_percent) as max_mem,
+			CAST(ROUND(AVG(disk_percent)) AS INTEGER) as avg_disk,
+			MAX(disk_percent) as max_disk,
+			SUM(net_bytes_sent) as total_bytes_sent,
+			SUM(net_bytes_recv) as total_bytes_recv,
+			COUNT(*) as total_records
+		FROM system_metrics
+		WHERE agent_id = $1
+		  AND time > NOW() - $2::interval
+		GROUP BY agent_id`,
+		agent, interval,
+	).Scan(
+		&agentID, &avgCPU, &maxCPU, &avgMem, &maxMem,
+		&avgDisk, &maxDisk, &totalBytesSent, &totalBytesRecv, &totalRecords,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "no system metrics found for this agent in the specified timerange",
+		})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
