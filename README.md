@@ -16,7 +16,7 @@
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Quick Start (using Make)](#quick-start-using-make)
-- [Manual Installation](#manual-installation)
+- [Manual Build](#manual-build)
 - [Running the System](#running-the-system)
 - [Web UI](#web-ui)
 - [REST API](#rest-api)
@@ -176,10 +176,10 @@ Rules can be scoped to a specific environment via the `tag` field. Agents filter
 
 ```bash
 # Production agent — receives global rules + "production" rules
-sudo ENV=production AGENT_ID=prod-agent-1 ./agent
+sudo ENV=production AGENT_ID=prod-agent-1 ./policy-agent
 
 # Staging agent — receives global rules + "staging" rules
-sudo ENV=staging AGENT_ID=staging-agent-1 ./agent
+sudo ENV=staging AGENT_ID=staging-agent-1 ./policy-agent
 ```
 
 ---
@@ -189,11 +189,11 @@ sudo ENV=staging AGENT_ID=staging-agent-1 ./agent
 | Dependency | Version |
 |------------|---------|
 | Ubuntu / Debian Linux | Kernel ≥ 5.9 |
-| Go | 1.21+ |
+| Go | **1.25+** |
 | clang / llvm | Latest stable |
 | libbpf-dev | Via apt |
 | Linux headers | Matching active kernel |
-| Docker + Docker Compose | For infrastructure (NATS + TimescaleDB) |
+| Docker + Docker Compose | For infrastructure (NATS + TimescaleDB + Grafana) |
 
 ---
 
@@ -204,32 +204,39 @@ Run these steps once on a fresh Ubuntu/Debian machine before starting the system
 ### 1. System packages
 
 ```bash
-sudo apt update && sudo apt install -y \
-    clang llvm libbpf-dev \
-    linux-headers-$(uname -r) \
-    make git gcc curl wget
+sudo apt update
+sudo apt install -y clang llvm libbpf-dev \
+    linux-headers-$(uname -r) make git gcc curl wget
 ```
 
-> **Note — missing `asm/types.h`:** On some Ubuntu/Debian systems the architecture-specific headers are not symlinked to `/usr/include/asm`, which causes `clang` and `bpf2go` to fail with `fatal error: 'asm/types.h' file not found`. Fix it with:
+> **Note — missing `asm/types.h`:** On some Ubuntu/Debian systems the architecture-specific headers are not symlinked to `/usr/include/asm`, which causes clang and bpf2go to fail with `fatal error: 'asm/types.h' file not found`. Fix it with:
 > ```bash
 > sudo ln -s /usr/include/x86_64-linux-gnu/asm /usr/include/asm
 > ```
 
-### 2. Go
+### 2. Go 1.25+
+
+Download and install the latest Go release (this project requires **Go 1.25 or newer**):
 
 ```bash
-wget https://go.dev/dl/go1.22.4.linux-amd64.tar.gz
+wget https://go.dev/dl/go1.25.9.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.22.4.linux-amd64.tar.gz
-rm go1.22.4.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.25.9.linux-amd64.tar.gz
+rm go1.25.9.linux-amd64.tar.gz
+```
 
-echo 'export PATH=$PATH:/usr/local/go/bin:$(go env GOPATH)/bin' >> ~/.bashrc
+Add Go to your `PATH` (run once, then re-open your shell or `source ~/.bashrc`):
+
+```bash
+echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
 source ~/.bashrc
 
 go version
 ```
 
 ### 3. Docker + Docker Compose
+
+Required to run the infrastructure (TimescaleDB, NATS, Grafana):
 
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
@@ -242,93 +249,135 @@ docker compose version
 
 > Re-login (or run `newgrp docker`) so the group change takes effect before using `docker` without `sudo`.
 
-### 4. bpf2go
-
-```bash
-go install github.com/cilium/ebpf/cmd/bpf2go@latest
-export PATH=$PATH:$(go env GOPATH)/bin
-```
-
-### 5. Clone the repository
+### 4. Clone the repository
 
 ```bash
 git clone https://github.com/ahmadsaflo1/ebpf-policy.git
 cd ebpf-policy
 ```
 
+### 5. Install Go build tool (bpf2go)
+
+`bpf2go` genererar Go-bindningar från den kompilerade eBPF-koden. Installera det med:
+
+```bash
+go get -tool github.com/cilium/ebpf/cmd/bpf2go
+```
+
+> **Build dependencies — summary:** The following are required to compile the agent and eBPF program:
+>
+> | Dependency | How to install |
+> |------------|----------------|
+> | `clang` | `sudo apt install clang` |
+> | `llvm` | `sudo apt install llvm` |
+> | `libbpf-dev` | `sudo apt install libbpf-dev` |
+> | `bpf2go` | `go get -tool github.com/cilium/ebpf/cmd/bpf2go` |
+
+### 6. Find your network interface name
+
+The agent monitors a specific network interface. Run this command to see the available interfaces:
+
+```bash
+ip link show
+```
+
+Common names are `eth0`, `ens3`, `ens5`, `enp0s3`. Note the name — you will need it when starting the agent.
+
 ---
 
 ## Quick Start (using Make)
 
-The Makefile wraps all steps. Infrastructure (TimescaleDB + NATS) runs in Docker.
+The Makefile wraps all steps. Infrastructure (TimescaleDB, NATS, Grafana) runs in Docker.
 
 ```bash
-# 1. Start TimescaleDB and NATS
+# 1. Start infrastructure (TimescaleDB, NATS, Grafana)
 make start-infra
 
-# 2. Build both binaries (compiles eBPF program + Go code)
-make build-server build-agent
+# 2. Build server and agent (compiles eBPF C code + Go binaries)
+make build
 
-# 3. Run the server (uses TimescaleDB by default)
+# 3. In one terminal — start the server (connects to TimescaleDB)
 make run-server
 
-#    Override variables to match your environment:
-#      INTERFACE   - Network interface to monitor  (default: eth0)
-#      AGENT_ID    - Unique name for this agent     (default: unknown)
-#      ENV         - Environment tag               (default: "" = receives all rules)
-#      SERVER_URL  - Policy server address         (default: http://localhost:8080)
-#      NATS_URL    - NATS broker address           (default: nats://localhost:4222)
-make run-agent INTERFACE=<iface> AGENT_ID=<name> ENV=<tag> SERVER_URL=http://<server-ip>:8080 NATS_URL=nats://<server-ip>:4222
+# 4. In a second terminal — start the agent
+#    Replace eth0 with your actual interface name (see: ip link show)
+make run-agent INTERFACE=eth0 AGENT_ID=my-agent
 ```
 
-Other useful targets:
+Override any variable to match your environment:
+
+```bash
+make run-agent \
+    INTERFACE=<iface> \
+    AGENT_ID=<name> \
+    ENV=<tag> \
+    SERVER_URL=http://<server-ip>:8080 \
+    NATS_URL=nats://<server-ip>:4222
+```
+
+### Verify it is working
+
+```bash
+# Check that all containers are running
+make status
+
+# Open the web UI in a browser
+http://<server-ip>:8080
+
+# Open Grafana (login: admin / admin)
+http://<server-ip>:3000
+```
+
+### Other useful Make targets
 
 ```bash
 make status        # Show running infrastructure containers
 make logs-db       # Stream TimescaleDB logs
 make logs-nats     # Stream NATS logs
+make logs-grafana  # Stream Grafana logs
 make stop-infra    # Stop infrastructure containers
+make db-flush      # Remove TimescaleDB volume (wipes all data)
 make clean         # Remove build artifacts
-make help          # List all targets
+make help          # List all targets with descriptions
 ```
 
 ---
 
-## Manual Installation
+## Manual Build
+
+Use this if you want to build without the Makefile shortcuts.
 
 ### 1. Start infrastructure
 
 ```bash
-make start-infra
+docker compose up -d
 ```
 
-### 2. Compile the eBPF program
+### 2. Build server
 
 ```bash
+go build -o policy-server ./cmd/server/
+```
+
+### 3. Build agent (compiles eBPF + generates Go bindings + builds binary)
+
+```bash
+# Compile the eBPF C program to bytecode
 cd ebpf && make && cd ..
-```
 
-### 3. Generate Go bindings
+# Generate Go bindings from the compiled bytecode
+go generate ./internal/agent/ebpf
 
-```bash
-cd internal/agent/ebpf
-bpf2go -go-package ebpf Policy ../../../ebpf/policy.c
-cd ../../..
+# Build the agent binary
+go build -o policy-agent ./cmd/agent/
 ```
 
 | Generated file | Description |
 |----------------|-------------|
-| `policy_bpfel.go` | Go bindings for little-endian (x86-64) |
-| `policy_bpfeb.go` | Go bindings for big-endian |
-| `policy_bpfel.o` | Compiled eBPF bytecode for little-endian |
-| `policy_bpfeb.o` | Compiled eBPF bytecode for big-endian |
-
-### 4. Build binaries
-
-```bash
-go build -o server ./cmd/server/
-go build -o agent ./cmd/agent/
-```
+| `internal/agent/ebpf/policy_bpfel.go` | Go bindings for little-endian (x86-64) |
+| `internal/agent/ebpf/policy_bpfeb.go` | Go bindings for big-endian |
+| `internal/agent/ebpf/policy_bpfel.o` | Compiled eBPF bytecode for little-endian |
+| `internal/agent/ebpf/policy_bpfeb.o` | Compiled eBPF bytecode for big-endian |
 
 ---
 
@@ -337,15 +386,15 @@ go build -o agent ./cmd/agent/
 ### Server
 
 ```bash
-./server
+USE_TIMESCALE=true ./policy-server
 ```
 
 | Environment Variable | Default | Description |
 |----------------------|---------|-------------|
 | `PORT` | `8080` | HTTP port the server listens on |
-| `NATS_URL` | `nats://localhost:4222` | NATS broker address |
+| `NATS_URL` | `nats://<server-ip>:4222` | NATS broker address |
 | `USE_TIMESCALE` | *(unset = SQLite)* | Set to `true` to use TimescaleDB |
-| `POSTGRES_HOST` | `localhost` | TimescaleDB host |
+| `POSTGRES_HOST` | `<server-ip>` | TimescaleDB host |
 | `POSTGRES_PORT` | `5432` | TimescaleDB port |
 | `POSTGRES_USER` | `ebpf_user` | Database user |
 | `POSTGRES_PASSWORD` | `ebpf_secret_password` | Database password |
@@ -361,7 +410,7 @@ sudo INTERFACE=<interface> \
      SERVER_URL=http://<server-ip>:8080 \
      NATS_URL=nats://<server-ip>:4222 \
      ENV=<environment> \
-     ./agent
+     ./policy-agent
 ```
 
 | Environment Variable | Default | Description |
@@ -464,15 +513,9 @@ curl -X POST http://<server-ip>:8080/api/rules \
 
 Grafana is included in the Docker Compose stack and is automatically provisioned with a pre-built dashboard.
 
-### Start
-
-```bash
-docker compose up -d
-```
-
 ### Open the dashboard
 
-Grafana runs on the same machine as the server. Replace `<server-ip>` with the server's IP address:
+After `make start-infra`, Grafana is available at:
 
 ```
 http://<server-ip>:3000
@@ -480,7 +523,7 @@ http://<server-ip>:3000
 
 Log in with username `admin` and password `admin`, then navigate to **Dashboards → Browse** and select **eBPF Policy Overview**.
 
-> If running everything locally you can use `http://localhost:3000`.
+> Replace `<server-ip>` with the IP address of the machine running the server. 
 
 The dashboard is loaded automatically via provisioning from `grafana/dashboards/ebpf-policy-overview.json`. No manual steps are required.
 
@@ -534,9 +577,9 @@ req_per_sec    INTEGER     NOT NULL
 blocked        INTEGER     NOT NULL    -- 1 = currently blocked, 0 = not blocked
 rate_limited   INTEGER     NOT NULL    -- 1 = rate-limited, 0 = not rate-limited
 passed         INTEGER     NOT NULL    -- packets allowed through
-avg_latency_us REAL        DEFAULT 0   -- microseconds
-min_latency_us REAL        DEFAULT 0
-max_latency_us REAL        DEFAULT 0
+avg_latency_us BIGINT      DEFAULT 0   -- microseconds
+min_latency_us BIGINT      DEFAULT 0
+max_latency_us BIGINT      DEFAULT 0
 ```
 
 Indexes: `(ip, time DESC)`, `(agent_id, time DESC)`
@@ -546,13 +589,13 @@ Indexes: `(ip, time DESC)`, `(agent_id, time DESC)`
 ```sql
 time             TIMESTAMPTZ NOT NULL    -- hypertable partition key
 agent_id         TEXT        NOT NULL
-cpu_percent      REAL        NOT NULL
-memory_percent   REAL        NOT NULL
+cpu_percent      INTEGER     NOT NULL    -- millipercent (×1000, e.g. 72500 = 72.5%)
+memory_percent   INTEGER     NOT NULL    -- millipercent (×1000)
 memory_used_mb   INTEGER     NOT NULL
 memory_total_mb  INTEGER     NOT NULL
 disk_used_gb     INTEGER     NOT NULL
 disk_total_gb    INTEGER     NOT NULL
-disk_percent     REAL        NOT NULL
+disk_percent     INTEGER     NOT NULL    -- millipercent (×1000)
 net_bytes_sent   BIGINT      NOT NULL
 net_bytes_recv   BIGINT      NOT NULL
 ```
