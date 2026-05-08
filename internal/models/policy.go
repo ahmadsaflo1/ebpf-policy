@@ -12,7 +12,7 @@ type PolicyRule struct {
 	Threshold int       `json:"threshold"` // req/s above which the rule triggers
 	Action    string    `json:"action"`    // "block" or "rate_limit"
 	Duration  int       `json:"duration"`  // how long the action is applied, in seconds
-	Tag       string    `json:"tag"`       // environment tag, e.g. "production"; empty means global
+	Topic     string    `json:"topic"`     // topic tag, e.g. "production"; empty means global
 	CreatedAt time.Time `json:"created_at"`
 }
 

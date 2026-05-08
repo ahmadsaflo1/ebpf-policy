@@ -26,10 +26,10 @@ func Start(ctx context.Context, conf *config.Settings) error {
 		ServerURL: conf.Agent.ServerURL,
 		AgentID:   conf.Agent.AgentID,
 		Interface: conf.Agent.Interface,
-		Env:       conf.Env,
+		Topic:     conf.Agent.Topic,
 	}
 
-	log.Printf("Agent configured: ID=%s Interface=%s Env=%s\n", cfg.AgentID, cfg.Interface, cfg.Env)
+	log.Printf("Agent configured: ID=%s Interface=%s Topic=%s\n", cfg.AgentID, cfg.Interface, cfg.Topic)
 
 	messaging.Init(cfg.NatsURL)
 
@@ -49,7 +49,7 @@ func Start(ctx context.Context, conf *config.Settings) error {
 		func(rule models.PolicyRule) { store.Upsert(rule) },
 		func(ruleID int) { store.Delete(ruleID) },
 	)
-	if err := listener.Start(cfg.Env); err != nil {
+	if err := listener.Start(cfg.Topic); err != nil {
 		program.Close()
 		messaging.Close()
 		return fmt.Errorf("failed to start policy listener: %w", err)
@@ -184,7 +184,7 @@ func watchServer(ctx context.Context, cfg *agentconfig.Config, store *agentconfi
 		case <-ticker.C:
 		}
 
-		rules, err := agentconfig.FetchRules(cfg.ServerURL, cfg.Env)
+		rules, err := agentconfig.FetchRules(cfg.ServerURL, cfg.Topic)
 		if err != nil {
 			if *serverAvailable {
 				log.Printf("Server is down: %v — continuing with current rules\n", err)
@@ -196,7 +196,7 @@ func watchServer(ctx context.Context, cfg *agentconfig.Config, store *agentconfi
 		}
 
 		if !*serverAvailable {
-			filtered := filterRules(rules, cfg.Env)
+			filtered := filterRules(rules, cfg.Topic)
 			log.Println("Server is back — loading fresh rules")
 			store.Clear()
 			for _, rule := range filtered {
@@ -210,9 +210,9 @@ func watchServer(ctx context.Context, cfg *agentconfig.Config, store *agentconfi
 
 func connectToServer(cfg *agentconfig.Config, store *agentconfig.RuleStore, serverAvailable *bool) {
 	for attempt := 1; attempt <= 4; attempt++ {
-		rules, err := agentconfig.FetchRules(cfg.ServerURL, cfg.Env)
+		rules, err := agentconfig.FetchRules(cfg.ServerURL, cfg.Topic)
 		if err == nil {
-			filtered := filterRules(rules, cfg.Env)
+			filtered := filterRules(rules, cfg.Topic)
 			for _, rule := range filtered {
 				store.UpsertSilent(rule)
 			}
@@ -243,10 +243,10 @@ func initProtectedPorts(program *ebpfloader.PolicyProgram) {
 	log.Printf("Protected ports initialized: %v", defaults)
 }
 
-func filterRules(rules []models.PolicyRule, env string) []models.PolicyRule {
+func filterRules(rules []models.PolicyRule, topic string) []models.PolicyRule {
 	var filtered []models.PolicyRule
 	for _, rule := range rules {
-		if rule.Tag == "" || rule.Tag == env {
+		if rule.Topic == "" || rule.Topic == topic {
 			filtered = append(filtered, rule)
 		}
 	}

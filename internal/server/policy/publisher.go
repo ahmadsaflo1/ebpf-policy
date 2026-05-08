@@ -15,8 +15,8 @@ const (
 )
 
 // PublishUpdate serialises rule and publishes it to the appropriate NATS topic.
-// Tagged rules are published to "policy.update.<tag>"; untagged rules go to
-// "policy.update" so all agents receive them.
+// Rules with a topic are published to "policy.update.<topic>"; untagged rules
+// go to "policy.update" so all agents receive them.
 func PublishUpdate(rule models.PolicyRule) {
 	data, err := json.Marshal(rule)
 	if err != nil {
@@ -25,8 +25,8 @@ func PublishUpdate(rule models.PolicyRule) {
 	}
 
 	topic := TopicPolicyUpdates
-    if rule.Tag != "" {
-        topic = TopicPolicyUpdates + "." + rule.Tag
+    if rule.Topic != "" {
+        topic = TopicPolicyUpdates + "." + rule.Topic
     }
 
     err = messaging.Publish(topic, data)
@@ -39,7 +39,7 @@ func PublishUpdate(rule models.PolicyRule) {
 }
 
 // PublishDelete publishes the ID of the deleted rule to "policy.delete" (or
-// "policy.delete.<tag>" for tagged rules) so agents can remove it locally.
+// "policy.delete.<topic>" for topic-scoped rules) so agents can remove it locally.
 func PublishDelete(rule models.PolicyRule) {
 	data, err := json.Marshal(map[string]int{"id": rule.ID})
 	if err != nil {
@@ -48,8 +48,8 @@ func PublishDelete(rule models.PolicyRule) {
 	}
 
 	topic := "policy.delete"
-    if rule.Tag != "" {
-        topic = "policy.delete." + rule.Tag
+    if rule.Topic != "" {
+        topic = "policy.delete." + rule.Topic
     }
 
 	err = messaging.Publish(topic, data)

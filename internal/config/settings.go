@@ -33,5 +33,6 @@ type Settings struct {
 		Interface string `default:"" env:"INTERFACE"`
 		AgentID   string `default:"agent-001" env:"AGENT_ID"`
 		ServerURL string `default:"http://localhost:8080" env:"SERVER_URL"`
+		Topic     string `default:"" env:"TOPIC"`
 	}
 }

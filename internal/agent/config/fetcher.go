@@ -11,16 +11,16 @@ import (
 )
 
 // FetchRules fetches policy rules from the server's /api/rules endpoint.
-// When env is non-empty it is passed as a query parameter so the server
-// returns only global rules plus rules tagged for that environment.
-func FetchRules(serverURL string, env string) ([]models.PolicyRule, error) {
-	url := fmt.Sprintf("%s/api/rules?env=%s", serverURL, env)
+// When topic is non-empty it is passed as a query parameter so the server
+// returns only global rules plus rules tagged for that topic.
+func FetchRules(serverURL string, topic string) ([]models.PolicyRule, error) {
+	url := fmt.Sprintf("%s/api/rules?topic=%s", serverURL, topic)
 
 	resp, err := http.Get(url)
-    if err != nil {
-        return nil, fmt.Errorf("failed to fetch rules: %w", err)
-    }
-    defer resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch rules: %w", err)
+	}
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

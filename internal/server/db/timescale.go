@@ -50,7 +50,7 @@ func createTimescaleTables() error {
 		threshold  INTEGER NOT NULL,
 		action     TEXT    NOT NULL,
 		duration   INTEGER NOT NULL,
-		tag        TEXT    NOT NULL DEFAULT '',
+		topic      TEXT    NOT NULL DEFAULT '',
 		created_at TIMESTAMPTZ DEFAULT NOW()
 	)`)
 	if err != nil {
@@ -75,8 +75,9 @@ func createTimescaleTables() error {
 		return fmt.Errorf("failed to create client_stats: %w", err)
 	}
 
-	// Migrate existing databases that pre-date this column.
+	// Migrate existing databases that pre-date these columns.
 	DB.Exec(`ALTER TABLE client_stats ADD COLUMN IF NOT EXISTS rate_limited INTEGER NOT NULL DEFAULT 0`)
+	DB.Exec(`DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='policy_rules' AND column_name='tag') THEN ALTER TABLE policy_rules RENAME COLUMN tag TO topic; END IF; END $$`)
 
 	// Convert to hypertable (TimescaleDB magic!)
 	_, err = DB.Exec(`

@@ -13,7 +13,7 @@ type Config struct {
 	ServerURL string
 	AgentID   string
 	Interface string
-	Env       string
+	Topic     string
 }
 
 // Opts carries flag/CLI overrides. Empty fields fall back to env vars and defaults.
@@ -22,7 +22,7 @@ type Opts struct {
 	ServerURL string
 	AgentID   string
 	Interface string
-	Env       string
+	Topic     string
 }
 
 // Load builds a Config by merging Opts (highest priority), env vars, and defaults.
@@ -32,11 +32,11 @@ func Load(opts Opts) *Config {
 		ServerURL: pick(opts.ServerURL, getEnv("SERVER_URL", "http://localhost:8080")),
 		AgentID:   pick(opts.AgentID,   getEnv("AGENT_ID",   "agent-001")),
 		Interface: pick(opts.Interface, getEnv("INTERFACE",  "eth0")),
-		Env:       pick(opts.Env,       getEnv("ENV",        "")),
+		Topic:     pick(opts.Topic,     getEnv("TOPIC",      "")),
 	}
 
-	log.Printf("Agent configured: ID=%s Interface=%s Env=%s\n",
-		cfg.AgentID, cfg.Interface, cfg.Env)
+	log.Printf("Agent configured: ID=%s Interface=%s Topic=%s\n",
+		cfg.AgentID, cfg.Interface, cfg.Topic)
 
 	return cfg
 }

@@ -32,50 +32,49 @@ func NewListener(onUpdate RuleHandler, onDelete DeleteHandler) *Listener {
 }
 
 // Start subscribes to NATS policy topics and begins dispatching events.
-// It always subscribes to the global "policy.update" and "policy.delete"
-// topics; when env is non-empty it additionally subscribes to the
-// environment-scoped variants (e.g. "policy.update.production").
-func (l *Listener) Start(env string) error {
-	topics := []string{"policy.update"}
-	if env != "" {
-		topics = append(topics, "policy.update."+env)
+// When topic is empty the agent is global and subscribes to all variants
+// via wildcards (policy.update and policy.update.>). When topic is set,
+// it subscribes to the global subject plus the topic-scoped one.
+func (l *Listener) Start(topic string) error {
+	var updateTopics, deleteTopics []string
+
+	if topic == "" {
+		updateTopics = []string{"policy.update", "policy.update.>"}
+		deleteTopics = []string{"policy.delete", "policy.delete.>"}
+	} else {
+		updateTopics = []string{"policy.update", "policy.update." + topic}
+		deleteTopics = []string{"policy.delete", "policy.delete." + topic}
 	}
 
-	for _, topic := range topics {
-        t := topic // avoid closure capture issue
-        err := messaging.Subscribe(t, func(data []byte) {
-            var rule models.PolicyRule
-            if err := json.Unmarshal(data, &rule); err != nil {
-                log.Printf("Failed to unmarshal policy update on topic %s: %v\n", t, err)
-                return
-            }
-            l.onUpdate(rule)
-        })
-        if err != nil {
-            return err
-        }
-    }
+	for _, t := range updateTopics {
+		t := t
+		err := messaging.Subscribe(t, func(data []byte) {
+			var rule models.PolicyRule
+			if err := json.Unmarshal(data, &rule); err != nil {
+				log.Printf("Failed to unmarshal policy update on topic %s: %v\n", t, err)
+				return
+			}
+			l.onUpdate(rule)
+		})
+		if err != nil {
+			return err
+		}
+	}
 
-	deleteTopics := []string{"policy.delete"}
-    if env != "" {
-        deleteTopics = append(deleteTopics, "policy.delete."+env)
-    }
+	for _, t := range deleteTopics {
+		t := t
+		err := messaging.Subscribe(t, func(data []byte) {
+			var payload map[string]int
+			if err := json.Unmarshal(data, &payload); err != nil {
+				log.Printf("Failed to unmarshal policy delete on topic %s: %v\n", t, err)
+				return
+			}
+			l.onDelete(payload["id"])
+		})
+		if err != nil {
+			return err
+		}
+	}
 
-    for _, topic := range deleteTopics {
-        t := topic
-        err := messaging.Subscribe(t, func(data []byte) {
-            var payload map[string]int
-            if err := json.Unmarshal(data, &payload); err != nil {
-                log.Printf("Failed to unmarshal policy delete on topic %s: %v\n", t, err)
-                return
-            }
-            ruleID := payload["id"]
-            l.onDelete(ruleID)
-        })
-        if err != nil {
-            return err
-        }
-    }
-
-    return nil
+	return nil
 }
