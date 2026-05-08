@@ -49,7 +49,7 @@ help:
 
 build-server:
 	@echo "Building policy server..."
-	go build -o policy-server ./cmd/server/
+	go build -o policy-server ./cmd/policyserver/
 	@echo "Server binary ready: ./policy-server"
 
 build-webserver:
@@ -73,13 +73,13 @@ stop-infra:
 	@echo "Infrastructure stopped."
 
 run-server:
-	@echo "Starting policy server..."
+	@echo "Starting policy server (config: $(CONFIG))..."
 	@echo "API:     http://localhost:8080"
 	@echo "Grafana: http://localhost:3000 (admin / admin)"
 	@echo ""
 	@echo "Start the agent separately with 'make run-agent' to connect to this server."
 	@echo ""
-	./policy-server
+	./policy-server -c $(CONFIG)
 
 run-webserver:
 	@echo "Starting webserver + agent (config: $(CONFIG))..."

@@ -21,6 +21,14 @@ type Settings struct {
 		Url string `toml:"url" default:"nats://127.0.0.1:4222" env:"NATS_URL"`
 	}
 
+	Postgres struct {
+		Host     string `toml:"host"     default:"localhost"       env:"POSTGRES_HOST"`
+		Port     int    `toml:"port"     default:"5432"            env:"POSTGRES_PORT"`
+		User     string `toml:"user"     default:"ebpf_user"       env:"POSTGRES_USER"`
+		Password string `toml:"password" default:""                env:"POSTGRES_PASSWORD"`
+		DB       string `toml:"db"       default:"policy_metrics"  env:"POSTGRES_DB"`
+	}
+
 	Agent struct {
 		Interface string `toml:"interface"  default:"" env:"INTERFACE"`
 		AgentID   string `toml:"agent_id"   default:"agent-001" env:"AGENT_ID"`
