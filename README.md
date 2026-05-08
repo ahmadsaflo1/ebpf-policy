@@ -377,7 +377,7 @@ make start-infra
 make build
 
 # 3. In one terminal — start the policy server
-make run-server
+make run-policyserver
 
 # 4. In a second terminal — start the webserver + agent
 #    Edit server.conf first to set the correct interface (ip link show)
@@ -387,7 +387,8 @@ make run-webserver
 Use a custom config file:
 
 ```bash
-make run-webserver CONFIG=prod.conf
+make run-policyserver CONFIG=server.conf
+make run-webserver CONFIG=server.conf
 ```
 
 ### Verify it is working
@@ -409,11 +410,11 @@ http://<server-ip>:3000
 ### Make targets
 
 ```bash
-make build           # Build policy-server and webserver (includes eBPF)
-make build-server    # Build policy server only
-make build-webserver # Build webserver + agent (includes eBPF compilation)
-make run-server      # Run the policy server
-make run-webserver   # Run webserver + agent (requires sudo for eBPF)
+make build                # Build policy-server and webserver (includes eBPF)
+make build-policyserver   # Build policy server only
+make build-webserver      # Build webserver + agent (includes eBPF compilation)
+make run-policyserver     # Run the policy server
+make run-webserver        # Run webserver + agent
 make start-infra     # Start TimescaleDB, NATS, and Grafana containers
 make stop-infra      # Stop infrastructure containers
 make stop            # Stop all processes and containers
@@ -487,10 +488,14 @@ go build -o webserver ./cmd/webserver/
 
 ### Webserver + Agent
 
-Requires root privileges to attach the XDP program to the network interface.
+The webserver needs Linux capabilities to load eBPF programs and attach XDP to a network interface. Use `setcap` once after each build to grant these capabilities to the binary, so it can run as an unprivileged user without `sudo`:
 
 ```bash
-sudo ./webserver -c server.conf
+sudo setcap cap_bpf,cap_net_admin,cap_perfmon+ep ./webserver
+```
+
+```bash
+./webserver -c server.conf
 ```
 
 | Flag | Default | Description |
