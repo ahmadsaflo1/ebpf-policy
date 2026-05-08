@@ -1,5 +1,5 @@
 // Package api implements the HTTP handlers for the policy server's REST API.
-// Routes are registered in cmd/server/main.go under the /api/rules prefix.
+// Routes are registered in cmd/policyserver/main.go under the /api/rules prefix.
 package api
 
 import (
@@ -14,23 +14,23 @@ import (
 )
 
 // GetRules handles GET /api/rules.
-// Accepts an optional ?env= query parameter; when supplied, only rules whose
-// tag matches env or whose tag is empty (global) are returned.
+// Accepts an optional ?topic= query parameter; when supplied, only rules whose
+// topic matches or whose topic is empty (global) are returned.
 func GetRules(w http.ResponseWriter, r *http.Request) {
-	env := r.URL.Query().Get("env")
+	topic := r.URL.Query().Get("topic")
 
 	var rows *sql.Rows
 	var err error
 
-	if env != "" {
+	if topic != "" {
 		rows, err = db.DB.Query(`
-			SELECT id, name, threshold, action, duration, tag, created_at
+			SELECT id, name, threshold, action, duration, topic, created_at
 			FROM policy_rules
-			WHERE tag = $1 OR tag = ''
-			ORDER BY created_at DESC`, env)
+			WHERE topic = $1 OR topic = ''
+			ORDER BY created_at DESC`, topic)
 	} else {
 		rows, err = db.DB.Query(`
-			SELECT id, name, threshold, action, duration, tag, created_at
+			SELECT id, name, threshold, action, duration, topic, created_at
 			FROM policy_rules
 			ORDER BY created_at DESC`)
 	}
@@ -45,7 +45,7 @@ func GetRules(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var r models.PolicyRule
 		err := rows.Scan(&r.ID, &r.Name, &r.Threshold,
-			&r.Action, &r.Duration, &r.Tag, &r.CreatedAt)
+			&r.Action, &r.Duration, &r.Topic, &r.CreatedAt)
 		if err != nil {
 			continue
 		}
@@ -66,10 +66,10 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 
 	var id int64
 	err := db.DB.QueryRow(`
-		INSERT INTO policy_rules (name, threshold, action, duration, tag)
+		INSERT INTO policy_rules (name, threshold, action, duration, topic)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id`,
-		rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag,
+		rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Topic,
 	).Scan(&id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -89,10 +89,10 @@ func GetRule(w http.ResponseWriter, r *http.Request) {
 	var rule models.PolicyRule
 
 	err := db.DB.QueryRow(`
-		SELECT id, name, threshold, action, duration, tag, created_at
+		SELECT id, name, threshold, action, duration, topic, created_at
 		FROM policy_rules WHERE id = $1`, id,
 	).Scan(&rule.ID, &rule.Name, &rule.Threshold,
-		&rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
+		&rule.Action, &rule.Duration, &rule.Topic, &rule.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
@@ -119,9 +119,9 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 
 	result, err := db.DB.Exec(`
 		UPDATE policy_rules
-		SET name=$1, threshold=$2, action=$3, duration=$4, tag=$5
+		SET name=$1, threshold=$2, action=$3, duration=$4, topic=$5
 		WHERE id=$6`,
-		rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Tag, id,
+		rule.Name, rule.Threshold, rule.Action, rule.Duration, rule.Topic, id,
 	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -142,17 +142,17 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteRule handles DELETE /api/rules/{id}.
-// The rule is fetched before deletion so its tag can be included in the NATS
+// The rule is fetched before deletion so its topic can be included in the NATS
 // delete event, ensuring only relevant agents are notified.
 func DeleteRule(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	var rule models.PolicyRule
 	err := db.DB.QueryRow(`
-		SELECT id, name, threshold, action, duration, tag, created_at
+		SELECT id, name, threshold, action, duration, topic, created_at
 		FROM policy_rules WHERE id = $1`, id,
 	).Scan(&rule.ID, &rule.Name, &rule.Threshold,
-		&rule.Action, &rule.Duration, &rule.Tag, &rule.CreatedAt)
+		&rule.Action, &rule.Duration, &rule.Topic, &rule.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})

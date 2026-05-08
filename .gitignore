@@ -2,6 +2,7 @@
 /policy-server
 /policy-agent
 /webserver
+/nats
 
 # Go build-cache
 *.o

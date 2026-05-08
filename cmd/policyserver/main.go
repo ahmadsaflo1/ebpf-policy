@@ -1,4 +1,4 @@
-// Command server starts the policy management HTTP server.
+// Command policyserver starts the policy management HTTP server.
 // It exposes a REST API for CRUD operations on policy rules, publishes rule
 // changes to NATS so agents receive them in real time, and collects metrics
 // reported by agents.
@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ahmadsaflo1/ebpf-policy/internal/config"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/api"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
@@ -22,48 +24,24 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/web"
 )
 
-type serverConfig struct {
-	port       string
-	natsURL    string
-	pgHost     string
-	pgPort     string
-	pgUser     string
-	pgPassword string
-	pgDB       string
-}
-
-func loadConfig() serverConfig {
-	var cfg serverConfig
-	flag.StringVar(&cfg.port, "port", envOr("PORT", "8080"), "HTTP listen port")
-	flag.StringVar(&cfg.natsURL, "nats-url", envOr("NATS_URL", "nats://localhost:4222"), "NATS server URL")
-	flag.StringVar(&cfg.pgHost, "pg-host", envOr("POSTGRES_HOST", "localhost"), "PostgreSQL host")
-	flag.StringVar(&cfg.pgPort, "pg-port", envOr("POSTGRES_PORT", "5432"), "PostgreSQL port")
-	flag.StringVar(&cfg.pgUser, "pg-user", envOr("POSTGRES_USER", "ebpf_user"), "PostgreSQL user")
-	flag.StringVar(&cfg.pgPassword, "pg-password", envOr("POSTGRES_PASSWORD", "ebpf_secret_password"), "PostgreSQL password")
-	flag.StringVar(&cfg.pgDB, "pg-db", envOr("POSTGRES_DB", "policy_metrics"), "PostgreSQL database name")
-	flag.Parse()
-	return cfg
-}
-
-// envOr returns the environment variable value or def when unset.
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
 func main() {
-	cfg := loadConfig()
+	var optConfig string
+	flag.StringVar(&optConfig, "c", "server.conf", "config file")
+	flag.Parse()
+
+	conf, err := config.New(optConfig)
+	if err != nil {
+		log.Fatalf("configuration: %v", err)
+	}
 
 	db.Init(db.Config{
-		Host:     cfg.pgHost,
-		Port:     cfg.pgPort,
-		User:     cfg.pgUser,
-		Password: cfg.pgPassword,
-		DBName:   cfg.pgDB,
+		Host:     conf.Postgres.Host,
+		Port:     fmt.Sprintf("%d", conf.Postgres.Port),
+		User:     conf.Postgres.User,
+		Password: conf.Postgres.Password,
+		DBName:   conf.Postgres.DB,
 	})
-	messaging.Init(cfg.natsURL)
+	messaging.Init(conf.Nats.Url)
 	defer messaging.Close()
 
 	metrics.StartCollector()
@@ -94,12 +72,12 @@ func main() {
 	mux.HandleFunc("GET /api/system/metrics", api.GetSystemMetrics)
 
 	srv := &http.Server{
-		Addr:    ":" + cfg.port,
+		Addr:    fmt.Sprintf(":%d", conf.Server.AltPort),
 		Handler: mux,
 	}
 
 	go func() {
-		log.Printf("Starting server on %s ...", srv.Addr)
+		log.Printf("Starting policy server on %s ...", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server crashed: %s\n", err)
 		}
@@ -116,4 +94,3 @@ func main() {
 	srv.Shutdown(ctx)
 	log.Println("Server gracefully stopped")
 }
-

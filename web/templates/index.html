@@ -114,7 +114,7 @@
             <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Threshold</th>
             <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Action</th>
             <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Duration</th>
-            <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Environment</th>
+            <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Topic</th>
             <th class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">Created</th>
             <th class="px-4 py-3 w-20"></th>
           </tr>
@@ -142,10 +142,10 @@
                 <span x-show="!rule.duration" class="text-gray-600">—</span>
               </td>
               <td class="px-4 py-3.5">
-                <span x-show="rule.tag"
+                <span x-show="rule.topic"
                   class="bg-blue-900/30 text-blue-400 border border-blue-800/40 text-xs font-medium px-2 py-0.5 rounded-full"
-                  x-text="rule.tag"></span>
-                <span x-show="!rule.tag" class="text-gray-600 text-xs">Global</span>
+                  x-text="rule.topic"></span>
+                <span x-show="!rule.topic" class="text-gray-600 text-xs">Global</span>
               </td>
               <td class="px-4 py-3.5 text-gray-500 text-xs" x-text="fmtDate(rule.created_at)"></td>
               <td class="px-4 py-3.5">
@@ -587,8 +587,8 @@
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1.5">Environment <span class="text-gray-600 font-normal">(optional)</span></label>
-            <input type="text" x-model="form.tag" placeholder="e.g. production"
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">Topic <span class="text-gray-600 font-normal">(optional)</span></label>
+            <input type="text" x-model="form.topic" placeholder="e.g. production"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
           </div>
@@ -693,7 +693,7 @@
       currentRule:  null,
       deleteTarget: null,
       flash:        { msg: '', ok: true },
-      form:         { name: '', threshold: 100, action: 'block', duration: 60, tag: '' },
+      form:         { name: '', threshold: 100, action: 'block', duration: 60, topic: '' },
 
       // traffic — top clients
       top:    { loading: false, results: [], count: null, error: '', params: { limit: 10, timerange: '1h', order_by: 'req_per_sec' } },
@@ -742,7 +742,7 @@
       openCreate() {
         this.editMode = false;
         this.errorMsg = '';
-        this.form = { name: '', threshold: 100, action: 'block', duration: 60, tag: '' };
+        this.form = { name: '', threshold: 100, action: 'block', duration: 60, topic: '' };
         this.showModal = true;
         this.$nextTick(() => this.$refs.nameInput?.focus());
       },
@@ -751,7 +751,7 @@
         this.editMode    = true;
         this.currentRule = rule;
         this.errorMsg    = '';
-        this.form = { name: rule.name, threshold: rule.threshold, action: rule.action, duration: rule.duration, tag: rule.tag || '' };
+        this.form = { name: rule.name, threshold: rule.threshold, action: rule.action, duration: rule.duration, tag: rule.topic || '' };
         this.showModal = true;
         this.$nextTick(() => this.$refs.nameInput?.focus());
       },

@@ -10,6 +10,7 @@ import (
 
 	"github.com/ahmadsaflo1/ebpf-policy/internal/agent"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/config"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/web"
 )
 
@@ -18,6 +19,14 @@ var (
 	BuildName    string
 	BuildVersion string
 )
+
+// natsWriter publishes each log line to a NATS subject.
+type natsWriter struct{ subject string }
+
+func (w *natsWriter) Write(p []byte) (int, error) {
+	messaging.Publish(w.subject, append([]byte(nil), p...))
+	return len(p), nil
+}
 
 func main() {
 
@@ -38,15 +47,20 @@ func main() {
 	flag.StringVar(&optLogFormat, "f", "text", "log format")
 	flag.Parse()
 
-	setupLogger(os.Stdout, optLoglevel, optLogFormat)
-
-	slog.Info("starting", "name", BuildName, "version", BuildVersion, "level", optLoglevel, "format", optLogFormat, "config", optConfig)
-
 	conf, err := config.New(optConfig)
 	if err != nil {
 		slog.Error("configuration", "error", err)
 		os.Exit(0)
 	}
+
+	messaging.Init(conf.Nats.Url)
+
+	// Send logs to both stdout and NATS subject "log.webserver".
+	// Subscribers can listen with: nats subscribe "log.>"
+	logOutput := io.MultiWriter(os.Stdout, &natsWriter{subject: "log.webserver"})
+	setupLogger(logOutput, optLoglevel, optLogFormat)
+
+	slog.Info("starting", "name", BuildName, "version", BuildVersion, "level", optLoglevel, "format", optLogFormat, "config", optConfig)
 
 	// dump config settings in debug mode
 	if optLoglevel == "debug" {
@@ -79,6 +93,7 @@ func main() {
 	slog.Info("terminating")
 	srv.Close()
 	terminate()
+	messaging.Close()
 }
 
 func setupLogger(output io.Writer, level, format string) {

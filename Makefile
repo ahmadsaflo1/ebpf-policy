@@ -1,17 +1,17 @@
-.PHONY: build start stop help build-server build-webserver start-infra stop-infra run-server run-webserver db-flush clean status logs-db logs-nats logs-grafana
+.PHONY: build start stop help build-policyserver build-webserver start-infra stop-infra run-policyserver run-webserver db-flush clean status logs-db logs-nats logs-grafana set-caps
 
 CONFIG ?= server.conf
 
-build: build-server build-webserver
+build: build-policyserver build-webserver
 	@echo ""
 	@echo " Build complete: policy-server and webserver ready."
 
-start: start-infra run-server
+start: start-infra run-policyserver
 
 stop: stop-infra
 	@echo "Stopping processes..."
-	- sudo pkill -f ./policy-server
-	- sudo pkill -f ./webserver
+	- pkill -f ./policy-server
+	- pkill -f ./webserver
 	@echo "Done."
 
 clean:
@@ -30,12 +30,12 @@ help:
 	@echo '  start           - Start infra and policy server'
 	@echo '  stop            - Stop all processes and infrastructure'
 	@echo '  clean           - Remove binaries and eBPF build artifacts'
-	@echo '  build-server    - Build policy server'
-	@echo '  build-webserver - Build webserver + agent (includes eBPF compilation)'
-	@echo '  start-infra     - Start TimescaleDB, NATS, and Grafana containers'
-	@echo '  stop-infra      - Stop infrastructure containers'
-	@echo '  run-server      - Run policy server'
-	@echo '  run-webserver   - Run webserver + agent (requires sudo for eBPF)'
+	@echo '  build-policyserver - Build policy server'
+	@echo '  build-webserver    - Build webserver + agent (includes eBPF compilation)'
+	@echo '  start-infra        - Start TimescaleDB, NATS, and Grafana containers'
+	@echo '  stop-infra         - Stop infrastructure containers'
+	@echo '  run-policyserver   - Run policy server'
+	@echo '  run-webserver   - Run webserver + agent (requires eBPF capabilities, run make set-caps first)'
 	@echo '  status          - Show infrastructure container status'
 	@echo '  db-flush        - Remove database volume (destructive)'
 	@echo ''
@@ -47,9 +47,9 @@ help:
 	@echo '  make run-webserver'
 	@echo '  make run-webserver CONFIG=sever.conf'
 
-build-server:
+build-policyserver:
 	@echo "Building policy server..."
-	go build -o policy-server ./cmd/server/
+	go build -o policy-server ./cmd/policyserver/
 	@echo "Server binary ready: ./policy-server"
 
 build-webserver:
@@ -59,6 +59,8 @@ build-webserver:
 	go generate ./internal/agent/ebpf
 	@echo "Building webserver..."
 	go build -o webserver ./cmd/webserver/
+	@echo "Setting eBPF capabilities on webserver binary..."
+	sudo setcap cap_bpf,cap_net_admin,cap_perfmon+ep ./webserver
 	@echo "Webserver binary ready: ./webserver"
 
 start-infra:
@@ -72,19 +74,19 @@ stop-infra:
 	docker compose down
 	@echo "Infrastructure stopped."
 
-run-server:
-	@echo "Starting policy server..."
+run-policyserver:
+	@echo "Starting policy server (config: $(CONFIG))..."
 	@echo "API:     http://localhost:8080"
 	@echo "Grafana: http://localhost:3000 (admin / admin)"
 	@echo ""
 	@echo "Start the agent separately with 'make run-agent' to connect to this server."
 	@echo ""
-	./policy-server
+	./policy-server -c $(CONFIG)
 
 run-webserver:
 	@echo "Starting webserver + agent (config: $(CONFIG))..."
 	@echo "Webserver: http://localhost:4040"
-	sudo ./webserver -c $(CONFIG)
+	./webserver -c $(CONFIG)
 
 db-flush:
 	@echo "Removing database volume..."
