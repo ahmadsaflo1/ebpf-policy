@@ -86,7 +86,7 @@ run-policyserver:
 run-webserver:
 	@echo "Starting webserver + agent (config: $(CONFIG))..."
 	@echo "Webserver: http://localhost:4040"
-	./webserver -c $(CONFIG)
+	./webserver -c $(CONFIG) -f json
 
 db-flush:
 	@echo "Removing database volume..."
