@@ -1,6 +1,7 @@
 .PHONY: build start stop help build-policyserver build-webserver start-infra stop-infra run-policyserver run-webserver db-flush clean status logs-db logs-nats logs-grafana set-caps
 
-CONFIG ?= server.conf
+POLICYSERVER_CONFIG ?= policyserver.conf
+WEBSERVER_CONFIG    ?= webserver.conf
 
 build: build-policyserver build-webserver
 	@echo ""
@@ -75,18 +76,15 @@ stop-infra:
 	@echo "Infrastructure stopped."
 
 run-policyserver:
-	@echo "Starting policy server (config: $(CONFIG))..."
+	@echo "Starting policy server (config: $(POLICYSERVER_CONFIG))..."
 	@echo "API:     http://localhost:8080"
 	@echo "Grafana: http://localhost:3000 (admin / admin)"
 	@echo ""
-	@echo "Start the agent separately with 'make run-agent' to connect to this server."
-	@echo ""
-	./policy-server -c $(CONFIG)
+	./policy-server -c $(POLICYSERVER_CONFIG)
 
 run-webserver:
-	@echo "Starting webserver + agent (config: $(CONFIG))..."
-	@echo "Webserver: http://localhost:4040"
-	./webserver -c $(CONFIG) -f json
+	@echo "Starting webserver + agent (config: $(WEBSERVER_CONFIG))..."
+	./webserver -c $(WEBSERVER_CONFIG) -f json
 
 db-flush:
 	@echo "Removing database volume..."

@@ -26,7 +26,7 @@ import (
 
 func main() {
 	var optConfig string
-	flag.StringVar(&optConfig, "c", "server.conf", "config file")
+	flag.StringVar(&optConfig, "c", "policyserver.conf", "config file")
 	flag.Parse()
 
 	conf, err := config.New(optConfig)
@@ -87,7 +87,7 @@ func main() {
 	mux.HandleFunc("GET /api/system/metrics", api.GetSystemMetrics)
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", conf.Server.AltPort),
+		Addr:    fmt.Sprintf(":%d", conf.Server.Port),
 		Handler: mux,
 	}
 
