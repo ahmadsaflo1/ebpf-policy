@@ -20,11 +20,11 @@ var (
 	BuildVersion string
 )
 
-// natsWriter publishes each log line to a NATS subject.
+// natsWriter publishes each log line to a NATS JetStream subject.
 type natsWriter struct{ subject string }
 
 func (w *natsWriter) Write(p []byte) (int, error) {
-	messaging.Publish(w.subject, append([]byte(nil), p...))
+	messaging.JetStreamPublish(w.subject, append([]byte(nil), p...))
 	return len(p), nil
 }
 
@@ -41,10 +41,12 @@ func main() {
 		optConfig    string
 		optLoglevel  string
 		optLogFormat string
+		optQuiet     bool
 	)
 	flag.StringVar(&optConfig, "c", "", "config file")
 	flag.StringVar(&optLoglevel, "l", "info", "log level")
 	flag.StringVar(&optLogFormat, "f", "text", "log format")
+	flag.BoolVar(&optQuiet, "q", false, "quiet mode, disable stdout logging")
 	flag.Parse()
 
 	conf, err := config.New(optConfig)
@@ -55,9 +57,20 @@ func main() {
 
 	messaging.Init(conf.Nats.Url)
 
-	// Send logs to both stdout and NATS subject "log.webserver".
-	// Subscribers can listen with: nats subscribe "log.>"
-	logOutput := io.MultiWriter(os.Stdout, &natsWriter{subject: "log.webserver"})
+	if err := messaging.EnsureStream("LOGS", []string{"log.>"}); err != nil {
+		slog.Error("jetstream", "error", err)
+		os.Exit(1)
+	}
+
+	// Send logs to NATS JetStream subject "log.webserver" (guaranteed delivery).
+	// In quiet mode stdout is skipped. Test with: nats subscribe "log.>"
+	nw := &natsWriter{subject: "log.webserver"}
+	var logOutput io.Writer
+	if optQuiet {
+		logOutput = nw
+	} else {
+		logOutput = io.MultiWriter(os.Stdout, nw)
+	}
 	setupLogger(logOutput, optLoglevel, optLogFormat)
 
 	slog.Info("starting", "name", BuildName, "version", BuildVersion, "level", optLoglevel, "format", optLogFormat, "config", optConfig)

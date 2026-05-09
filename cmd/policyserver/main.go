@@ -44,6 +44,21 @@ func main() {
 	messaging.Init(conf.Nats.Url)
 	defer messaging.Close()
 
+	if err := messaging.EnsureStream("LOGS", []string{"log.>"}); err != nil {
+		log.Fatalf("jetstream: %v", err)
+	}
+
+	if err := messaging.JetStreamSubscribe("log.>", func(data []byte) {
+		var logLine map[string]any
+		if err := json.Unmarshal(data, &logLine); err != nil {
+			log.Printf("log consumer: could not unmarshal log line: %v", err)
+			return
+		}
+		log.Printf("log received: %v", logLine)
+	}); err != nil {
+		log.Fatalf("log consumer: %v", err)
+	}
+
 	metrics.StartCollector()
 	metrics.StartSystemCollector()
 

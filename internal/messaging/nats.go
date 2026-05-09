@@ -12,6 +12,9 @@ import (
 // NC is the shared NATS connection used by the entire process.
 var NC *nats.Conn
 
+// JS is the shared JetStream context used for guaranteed log delivery.
+var JS nats.JetStreamContext
+
 // shuttingDown suppresses disconnect/reconnect log noise during a clean shutdown.
 var shuttingDown bool
 
@@ -43,7 +46,43 @@ func Init(natsURL string) {
 	if err != nil {
 		log.Fatal("could not connect to NATS:", err)
 	}
+
+	JS, err = NC.JetStream()
+	if err != nil {
+		log.Fatal("could not create JetStream context:", err)
+	}
+
 	log.Println("Connected to NATS!")
+}
+
+// EnsureStream creates a JetStream stream with the given name and subjects if
+// it does not already exist. Safe to call multiple times (idempotent).
+func EnsureStream(name string, subjects []string) error {
+	_, err := JS.AddStream(&nats.StreamConfig{
+		Name:     name,
+		Subjects: subjects,
+		Storage:  nats.FileStorage,
+	})
+	if err == nats.ErrStreamNameAlreadyInUse {
+		return nil
+	}
+	return err
+}
+
+// JetStreamPublish publishes data to a JetStream subject with guaranteed delivery.
+func JetStreamPublish(topic string, data []byte) error {
+	_, err := JS.Publish(topic, data)
+	return err
+}
+
+// JetStreamSubscribe registers handler for every message on topic via JetStream.
+// Messages are acknowledged automatically after the handler returns.
+func JetStreamSubscribe(topic string, handler func([]byte)) error {
+	_, err := JS.Subscribe(topic, func(m *nats.Msg) {
+		handler(m.Data)
+		m.Ack()
+	}, nats.DeliverNew())
+	return err
 }
 
 // Close marks the connection as intentionally shutting down (suppressing
