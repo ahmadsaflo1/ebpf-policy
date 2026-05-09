@@ -76,6 +76,7 @@
 | `policy.delete.<tag>` | Server → Agents | Deleted rule for a specific environment |
 | `metrics.report` | Agents → Server | Per-IP traffic stats (every 10 s) |
 | `system.metrics` | Agents → Server | System performance metrics (every 30 s) |
+| `log.>` | Agents → Server | Structured log lines from all agents (JetStream, guaranteed delivery) |
 
 ---
 
@@ -363,6 +364,19 @@ server_url = "http://localhost:8080"   # Policy server REST API URL
 
 > If `agent.interface` is left empty, the webserver starts without the eBPF agent — useful for development or when running without root access.
 
+> **Running the agent on a separate machine:** If the webserver/agent runs on a different machine than the policy server, replace `localhost` with the policy server's IP address in two places in `server.conf`:
+> - `nats.url` — so the agent can reach the NATS broker
+> - `agent.serverurl` — so the agent can reach the policy server REST API
+>
+> Example:
+> ```toml
+> [nats]
+> url = "nats://192.168.1.10:4222"
+>
+> [agent]
+> serverurl = "http://192.168.1.10:8080"
+> ```
+
 ---
 
 ## Quick Start (using Make)
@@ -503,6 +517,7 @@ sudo setcap cap_bpf,cap_net_admin,cap_perfmon+ep ./webserver
 | `-c` | *(none)* | Path to TOML config file |
 | `-l` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `-f` | `text` | Log format: `text` or `json` |
+| `-q` | `false` | Quiet mode — disable stdout logging (logs sent to NATS only) |
 
 All settings are in `server.conf` — see [Configuration](#configuration).
 
