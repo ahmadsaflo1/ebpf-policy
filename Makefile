@@ -67,6 +67,8 @@ build-webserver:
 start-infra:
 	@echo "Starting infrastructure (TimescaleDB + NATS + Grafana)..."
 	docker compose up -d
+	@echo "Waiting for TimescaleDB to be ready..."
+	@until docker exec timescaledb pg_isready -q; do sleep 1; done
 	@echo ""
 	@echo "   Infrastructure started!"
 
