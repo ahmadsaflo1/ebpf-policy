@@ -17,8 +17,8 @@
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Quick Start (using Make)](#quick-start-using-make)
-- [Manual Build](#manual-build)
 - [Running the System](#running-the-system)
+- [Running the agent on an additional machine](#running-the-agent-on-an-additional-machine)
 - [Web UI](#web-ui)
 - [REST API](#rest-api)
 - [Grafana Dashboard](#grafana-dashboard)
@@ -35,10 +35,10 @@
 │   REST API :8080             │
 │   TimescaleDB                │
 │   Policy publishing          │
-│   Metrics collection         │
+│   Metrics + log collection   │
 └──────────────┬───────────────┘
                │
-           NATS pub/sub
+           NATS pub/sub + JetStream
                │
        ┌───────┴────────┐
        │                │
@@ -52,31 +52,31 @@
 
 ### Binaries
 
-| Binary | Description |
-|--------|-------------|
-| **`policy-server`** | Central control plane — manages rules via REST API, persists data to TimescaleDB, distributes changes via NATS |
-| **`webserver`** | Serves the web UI on port 4040 and runs the embedded eBPF/XDP agent — configured via `server.conf` |
+| Binary | Config file | Description |
+|--------|-------------|-------------|
+| **`policy-server`** | `policyserver.conf` | Central control plane — manages rules via REST API, persists data to TimescaleDB, distributes changes via NATS, collects metrics and logs |
+| **`webserver`** | `webserver.conf` | Serves the web UI and runs the embedded eBPF/XDP agent |
 
 ### Components
 
 | Component | Description |
 |-----------|-------------|
-| **Policy Server** | Stores rules, collects metrics, pushes updates to agents via NATS |
+| **Policy Server** | Stores rules, collects metrics and logs, pushes updates to agents via NATS |
 | **Agent** | Embedded in the webserver binary — loads the eBPF program, enforces rules, reports metrics |
 | **eBPF/XDP** | Kernel-space C program that filters packets at the network interface with microsecond latency |
-| **NATS** | Message broker for policy distribution and metrics aggregation across all agents |
+| **NATS + JetStream** | Message broker for policy distribution, metrics aggregation, and guaranteed log delivery |
 
 ### NATS Topics
 
-| Topic | Direction | Purpose |
-|-------|-----------|---------|
-| `policy.update` | Server → Agents | New or updated global rule |
-| `policy.update.<tag>` | Server → Agents | New or updated rule for a specific environment |
-| `policy.delete` | Server → Agents | Deleted global rule |
-| `policy.delete.<tag>` | Server → Agents | Deleted rule for a specific environment |
-| `metrics.report` | Agents → Server | Per-IP traffic stats (every 10 s) |
-| `system.metrics` | Agents → Server | System performance metrics (every 30 s) |
-| `log.>` | Agents → Server | Structured log lines from all agents (JetStream, guaranteed delivery) |
+| Topic | Direction | Delivery | Purpose |
+|-------|-----------|----------|---------|
+| `policy.update` | Server → Agents | Core NATS | New or updated global rule |
+| `policy.update.<tag>` | Server → Agents | Core NATS | New or updated rule for a specific environment |
+| `policy.delete` | Server → Agents | Core NATS | Deleted global rule |
+| `policy.delete.<tag>` | Server → Agents | Core NATS | Deleted rule for a specific environment |
+| `metrics.report` | Agents → Server | Core NATS | Per-IP traffic stats (every 10 s) |
+| `system.metrics` | Agents → Server | Core NATS | System performance metrics (every 30 s) |
+| `log.>` | Agents → Server | **JetStream** | Structured JSON log lines — guaranteed delivery |
 
 ---
 
@@ -130,6 +130,16 @@ PUT /api/rules/:id
   → Server persists to system_metrics
 ```
 
+**Log delivery (per agent, per log line):**
+
+```
+  → slog writes JSON log line
+  → natsWriter publishes to JetStream "log.webserver"
+  → Policy server receives via "log.>" subscription
+  → json.Unmarshal into map[string]any
+  → Logged and available for storage/forwarding
+```
+
 ---
 
 ## eBPF Maps
@@ -171,9 +181,9 @@ Only traffic to ports registered in `protected_ports` is counted and subject to 
 
 ### Agent Evaluation Loop (user-space, every 10 s)
 
-Every 10 seconds the agent reads the eBPF `request_count` map, computes `req/s = delta / 10` per IP, and calls `store.Match(reqPerSec)` to find the winning rule:
+Every 10 seconds the agent reads the eBPF `request_count` map, computes `req/s = delta / 10` per IP, and finds the winning rule:
 
-1. Collect all rules where `reqPerSec > rule.Threshold`.
+1. Collect all rules where `reqPerSec >= rule.Threshold`.
 2. **`block` always takes priority over `ratelimit`.**
 3. Among rules with the same action, the **highest threshold wins** (most specific rule).
 4. Returns no match if no rule's threshold is exceeded — existing rate limits are removed.
@@ -197,14 +207,10 @@ Every 10 seconds the agent reads the eBPF `request_count` map, computes `req/s =
 
 ### Token Bucket (kernel-level rate limiting)
 
-The token bucket parameters are set **dynamically per IP** from the matched rule:
-
 | Parameter | Value |
 |-----------|-------|
-| Refill rate | `rule.Threshold` tokens / second (the matched rule's threshold) |
+| Refill rate | `rule.Threshold` tokens / second |
 | Max capacity (burst) | `rule.Threshold × 2` tokens |
-
-Packets are silently dropped when the token quota is exhausted. Block entries store an expiration timestamp in kernel nanoseconds (`bpf_ktime_get_ns`) and are enforced atomically on every packet without any user-space involvement.
 
 ### Agent Resilience
 
@@ -213,7 +219,7 @@ Packets are silently dropped when the token quota is exhausted. Block entries st
 | Server unreachable at startup | Retries 4 times (5 s interval), then falls back to disk cache |
 | No disk cache and server down | Starts without rules, keeps retrying |
 | Server comes back online | Fetches fresh rules automatically (health check every 15 s) |
-| NATS connection drops | Reconnects with exponential backoff (max 5 s) |
+| NATS connection drops | Reconnects with 5 s interval |
 
 Rule cache is saved to `/tmp/ebpf-policy-rules.json` and updated on every successful fetch.
 
@@ -221,22 +227,25 @@ Rule cache is saved to `/tmp/ebpf-policy-rules.json` and updated on every succes
 
 ## Environment Tags
 
-Rules can be scoped to a specific environment via the `tag` field. Agents filter rules based on the `env` setting in `server.conf`:
+Rules can be scoped to a specific environment via the `topic` field. Agents filter rules based on the `env` setting in `webserver.conf`:
 
-- **Global rule** (empty `tag`): applied by all agents regardless of environment.
-- **Tagged rule** (e.g. `tag: "production"`): applied only by agents where `env = "production"`.
+- **Global rule** (empty `topic`): applied by all agents regardless of environment.
+- **Tagged rule** (e.g. `topic: "production"`): applied only by agents where `agent.topic = "production"`.
 
-Set the environment in `server.conf`:
+Set the environment in `webserver.conf`:
 
 ```toml
 # Production agent — receives global rules + "production" rules
-env = "production"
+[agent]
+topic = "production"
 
 # Staging agent — receives global rules + "staging" rules
-env = "staging"
+[agent]
+topic = "staging"
 
 # Empty (default) — receives ALL rules
-env = ""
+[agent]
+topic = ""
 ```
 
 ---
@@ -336,46 +345,61 @@ The agent monitors a specific network interface. Run this command to see the ava
 ip link show
 ```
 
-Common names: `eth0`, `ens3`, `ens5`, `enp0s5`. Note the name — you will need it in `server.conf`.
+Common names: `eth0`, `ens3`, `ens5`, `enp0s5`. Set this in `webserver.conf` under `agent.interface`.
 
 ---
 
 ## Configuration
 
-The webserver and agent are configured through a single TOML file (`server.conf` by default).
+The system uses two separate config files — one per binary.
+
+### `policyserver.conf` — central policy server
 
 ```toml
-# Environment tag for this agent — filters which rules are applied.
-# Leave empty to receive ALL rules (global + all tagged).
-env = "production"
+env = "prod"
 
 [server]
-port    = 4040          # Web UI port
-web_dir = "web/public"  # Static files directory
+port = 8080   # REST API port
 
 [nats]
-url = "nats://localhost:4222"   # NATS broker address
+url = "nats://localhost:4222"
+
+[postgres]
+host     = "localhost"
+port     = 5432
+user     = "ebpf_user"
+password = "ebpf_secret_password"
+db       = "policy_metrics"
+```
+
+### `webserver.conf` — webserver + agent on each edge machine
+
+```toml
+env = "prod"
+
+[server]
+port    = 4040          # web UI port
+altport = 80            # HTTP port (only needed with Let's Encrypt)
+webdir  = "web/public"
+
+# HTTPS with Let's Encrypt (requires a domain name):
+letsencrypt = false
+contact     = ""        # email for Let's Encrypt notifications
+domains     = ["yourdomain.com"]
+
+[nats]
+url = "nats://localhost:4222"   # replace localhost with server IP if on a different machine
 
 [agent]
-interface  = "enp0s5"                  # Network interface for eBPF (see: ip link show)
-agent_id   = "agent-001"               # Unique name for this agent
-server_url = "http://localhost:8080"   # Policy server REST API URL
+interface = "enp0s5"            # network interface for eBPF (ip link show)
+agentid   = "agent-1"
+serverurl = "http://localhost:8080"   # replace localhost with server IP if on a different machine
+topic     = "production"        # leave empty for all topics
 ```
 
 > If `agent.interface` is left empty, the webserver starts without the eBPF agent — useful for development or when running without root access.
 
-> **Running the agent on a separate machine:** If the webserver/agent runs on a different machine than the policy server, replace `localhost` with the policy server's IP address in two places in `server.conf`:
-> - `nats.url` — so the agent can reach the NATS broker
-> - `agent.serverurl` — so the agent can reach the policy server REST API
->
-> Example:
-> ```toml
-> [nats]
-> url = "nats://192.168.1.10:4222"
->
-> [agent]
-> serverurl = "http://192.168.1.10:8080"
-> ```
+> **Running the agent on a separate machine:** Only the `webserver` binary needs to run on each edge machine. Replace `localhost` in `nats.url` and `agent.serverurl` with the policy server's IP address. See [Running the agent on an additional machine](#running-the-agent-on-an-additional-machine).
 
 ---
 
@@ -384,25 +408,25 @@ server_url = "http://localhost:8080"   # Policy server REST API URL
 The Makefile wraps all steps. Infrastructure (TimescaleDB, NATS, Grafana) runs in Docker.
 
 ```bash
-# 1. Start infrastructure (TimescaleDB, NATS, Grafana)
+# 1. Start infrastructure (TimescaleDB, NATS, Grafana) — waits until DB is ready
 make start-infra
 
-# 2. Build all binaries (compiles eBPF C code + Go binaries)
+# 2. Build all binaries
 make build
 
 # 3. In one terminal — start the policy server
 make run-policyserver
 
 # 4. In a second terminal — start the webserver + agent
-#    Edit server.conf first to set the correct interface (ip link show)
+#    Edit webserver.conf first: set agent.interface (ip link show)
 make run-webserver
 ```
 
-Use a custom config file:
+Use custom config files:
 
 ```bash
-make run-policyserver CONFIG=server.conf
-make run-webserver CONFIG=server.conf
+make run-policyserver POLICYSERVER_CONFIG=policyserver.conf
+make run-webserver WEBSERVER_CONFIG=webserver.conf
 ```
 
 ### Verify it is working
@@ -426,19 +450,19 @@ http://<server-ip>:3000
 ```bash
 make build                # Build policy-server and webserver (includes eBPF)
 make build-policyserver   # Build policy server only
-make build-webserver      # Build webserver + agent (includes eBPF compilation)
-make run-policyserver     # Run the policy server
-make run-webserver        # Run webserver + agent
-make start-infra     # Start TimescaleDB, NATS, and Grafana containers
-make stop-infra      # Stop infrastructure containers
-make stop            # Stop all processes and containers
-make status          # Show running infrastructure containers
-make logs-db         # Stream TimescaleDB logs
-make logs-nats       # Stream NATS logs
-make logs-grafana    # Stream Grafana logs
-make db-flush        # Remove TimescaleDB volume (wipes all data)
-make clean           # Remove build artifacts
-make help            # List all targets with descriptions
+make build-webserver      # Build webserver + agent (includes eBPF compilation + setcap)
+make run-policyserver     # Run policy server (default config: policyserver.conf)
+make run-webserver        # Run webserver + agent in JSON log mode (default config: webserver.conf)
+make start-infra          # Start TimescaleDB, NATS, and Grafana — waits for DB ready
+make stop-infra           # Stop infrastructure containers
+make stop                 # Stop all processes and containers
+make status               # Show running infrastructure containers
+make logs-db              # Stream TimescaleDB logs
+make logs-nats            # Stream NATS logs
+make logs-grafana         # Stream Grafana logs
+make db-flush             # Remove TimescaleDB volume (wipes all data)
+make clean                # Remove build artifacts
+make help                 # List all targets
 ```
 
 ---
@@ -486,56 +510,56 @@ go build -o webserver ./cmd/webserver/
 ### Policy Server
 
 ```bash
-./policy-server
+./policy-server -c policyserver.conf
 ```
-
-| Environment Variable | Default | Description |
-|----------------------|---------|-------------|
-| `PORT` | `8080` | HTTP port the server listens on |
-| `NATS_URL` | `nats://<server-ip>:4222` | NATS broker address |
-| `USE_TIMESCALE` | *(unset = SQLite)* | Set to `true` to use TimescaleDB |
-| `POSTGRES_HOST` | `<server-ip>` | TimescaleDB host |
-| `POSTGRES_PORT` | `5432` | TimescaleDB port |
-| `POSTGRES_USER` | `ebpf_user` | Database user |
-| `POSTGRES_PASSWORD` | `ebpf_secret_password` | Database password |
-| `POSTGRES_DB` | `policy_metrics` | Database name |
 
 ### Webserver + Agent
 
-The webserver needs Linux capabilities to load eBPF programs and attach XDP to a network interface. Use `setcap` once after each build to grant these capabilities to the binary, so it can run as an unprivileged user without `sudo`:
+Grant capabilities once after each build (allows running without `sudo`):
 
 ```bash
 sudo setcap cap_bpf,cap_net_admin,cap_perfmon+ep ./webserver
 ```
 
 ```bash
-./webserver -c server.conf
+./webserver -c webserver.conf -f json
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-c` | *(none)* | Path to TOML config file |
 | `-l` | `info` | Log level: `debug`, `info`, `warn`, `error` |
-| `-f` | `text` | Log format: `text` or `json` |
-| `-q` | `false` | Quiet mode — disable stdout logging (logs sent to NATS only) |
+| `-f` | `text` | Log format: `text` or `json` (use `json` so policy server can parse logs) |
+| `-q` | `false` | Quiet mode — disable stdout, send logs to NATS JetStream only |
 
-All settings are in `server.conf` — see [Configuration](#configuration).
+> **Note:** Run the webserver with `-f json` so the policy server can unmarshal log lines received via NATS JetStream on `log.>`.
+
+### HTTPS with Let's Encrypt
+
+To serve the web UI over HTTPS, set in `webserver.conf`:
+
+```toml
+[server]
+port        = 443
+altport     = 80       # for ACME HTTP challenge and HTTP→HTTPS redirect
+letsencrypt = true
+contact     = "your@email.com"
+domains     = ["yourdomain.com"]
+```
+
+Requires port 80 and 443 open in the firewall, and the domain must point to the machine's IP.
 
 ---
 
 ## Web UI
 
-The webserver serves a built-in web interface at `http://<webserver>:4040/`.
-
-### Tabs
+Available at `http://<webserver-ip>:4040/`
 
 | Tab | Description |
 |-----|-------------|
-| **Rules** | Create, view, edit, and delete policy rules with live validation |
-| **Traffic** | Top clients by req/s / blocks / rate-limits; per-IP search; aggregated stats over a time range |
+| **Rules** | Create, view, edit, and delete policy rules |
+| **Traffic** | Top clients by req/s / blocks / rate-limits; per-IP search; aggregated stats |
 | **System** | Recent and aggregated system metrics (CPU, memory, disk, network I/O) per agent |
-
-A live health indicator in the header reflects the policy server's `/health` endpoint status in real time.
 
 ---
 
@@ -547,13 +571,12 @@ Base URL: `http://<server>:8080`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/` | Web UI (browser dashboard) |
 | `GET` | `/health` | Server health check |
-| `GET` | `/api/rules` | List all rules (optional `?env=<tag>`) |
+| `GET` | `/api/rules` | List all rules |
 | `POST` | `/api/rules` | Create a new rule |
-| `GET` | `/api/rules/:id` | Get a specific rule |
-| `PUT` | `/api/rules/:id` | Update a rule |
-| `DELETE` | `/api/rules/:id` | Delete a rule |
+| `GET` | `/api/rules/{id}` | Get a specific rule |
+| `PUT` | `/api/rules/{id}` | Update a rule |
+| `DELETE` | `/api/rules/{id}` | Delete a rule |
 
 ### Traffic Metrics
 
@@ -593,7 +616,7 @@ curl -X POST http://<server-ip>:8080/api/rules \
     "threshold": 200,
     "action": "ratelimit",
     "duration": 30,
-    "tag": "production"
+    "topic": "production"
   }'
 ```
 
@@ -605,7 +628,7 @@ curl -X POST http://<server-ip>:8080/api/rules \
 | `threshold` | `int` | Requests per second trigger threshold |
 | `action` | `string` | `"block"` or `"ratelimit"` |
 | `duration` | `int` | Enforcement duration in seconds |
-| `tag` | `string` | *(optional)* Environment tag — empty = global |
+| `topic` | `string` | *(optional)* Environment tag — empty = global |
 
 ---
 
@@ -653,7 +676,7 @@ docker compose up -d
 
 ## Database Schema
 
-The database is created automatically on server startup. TimescaleDB uses hypertables with 1-day chunk intervals and automatic retention policies (30 days for traffic metrics, 7 days for system metrics).
+Created automatically on server startup. TimescaleDB hypertables use 1-day chunk intervals.
 
 **`policy_rules`**
 
@@ -663,11 +686,11 @@ name        TEXT        NOT NULL
 threshold   INTEGER     NOT NULL
 action      TEXT        NOT NULL    -- "block" or "ratelimit"
 duration    INTEGER     NOT NULL    -- seconds
-tag         TEXT        NOT NULL DEFAULT ''   -- empty = global rule
+topic       TEXT        NOT NULL DEFAULT ''   -- empty = global rule
 created_at  TIMESTAMPTZ DEFAULT NOW()
 ```
 
-**`client_stats`** — per-IP traffic metrics from agents (hypertable)
+**`client_stats`** — per-IP traffic metrics (30-day retention)
 
 ```sql
 time           TIMESTAMPTZ NOT NULL
@@ -682,7 +705,7 @@ min_latency_us BIGINT      DEFAULT 0
 max_latency_us BIGINT      DEFAULT 0
 ```
 
-**`system_metrics`** — agent system performance (hypertable)
+**`system_metrics`** — agent system performance (7-day retention)
 
 ```sql
 time             TIMESTAMPTZ NOT NULL
@@ -705,10 +728,11 @@ net_bytes_recv   BIGINT      NOT NULL
 | Technology | Usage |
 |------------|-------|
 | [cilium/ebpf](https://github.com/cilium/ebpf) | Loads and manages eBPF programs from Go |
-| [NATS](https://nats.io) | Distributed pub/sub messaging |
+| [NATS + JetStream](https://nats.io) | Distributed pub/sub messaging with guaranteed log delivery |
 | [BurntSushi/toml](https://github.com/BurntSushi/toml) | TOML configuration file parsing |
 | Go stdlib `net/http` | HTTP server and REST API routing |
 | [TimescaleDB](https://www.timescale.com) | Time-series PostgreSQL for metrics |
 | `/proc` + `syscall.Statfs` | Linux-native system metrics (CPU, memory, disk, network I/O) |
-| [Alpine.js](https://alpinejs.dev) + [Tailwind CSS](https://tailwindcss.com) | Reactive web UI (dark theme) |
+| [Alpine.js](https://alpinejs.dev) + [Tailwind CSS](https://tailwindcss.com) | Reactive web UI |
 | eBPF/XDP | Kernel-level packet filtering with minimal overhead |
+| `golang.org/x/crypto/acme/autocert` | Automatic TLS certificates via Let's Encrypt |
