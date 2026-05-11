@@ -1389,7 +1389,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  id,\n  name,\n  threshold,\n  action,\n  duration,\n  tag,\n  created_at\nFROM policy_rules\nORDER BY created_at DESC",
+          "rawSql": "SELECT\n  id,\n  name,\n  threshold,\n  action,\n  duration,\n  topic,\n  created_at\nFROM policy_rules\nORDER BY created_at DESC",
           "refId": "A"
         }
       ],
