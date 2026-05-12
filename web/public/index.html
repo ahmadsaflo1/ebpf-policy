@@ -4,10 +4,46 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Solid Template</title>
+
+    <title>NordPulse – Cloud Infrastructure Monitoring & Alerting</title>
+    <meta name="description" content="NordPulse gives DevOps teams real-time visibility into cloud infrastructure. Monitor uptime, latency, and resource usage across AWS, GCP, and Azure from a single dashboard.">
+    <meta name="keywords" content="cloud monitoring, infrastructure monitoring, uptime monitoring, DevOps, alerting, SRE, AWS monitoring, Azure monitoring, GCP monitoring, server monitoring">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://test.kollectra.com/">
+
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://test.kollectra.com/">
+    <meta property="og:title" content="NordPulse – Cloud Infrastructure Monitoring">
+    <meta property="og:description" content="Real-time infrastructure monitoring for modern DevOps teams. Instant alerts, beautiful dashboards, and deep insights — all in one place.">
+    <meta property="og:image" content="https://test.kollectra.com/images/og-preview.png">
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@nordpulse">
+    <meta name="twitter:title" content="NordPulse – Cloud Infrastructure Monitoring">
+    <meta name="twitter:description" content="Real-time infrastructure monitoring. Instant alerts, beautiful dashboards.">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "NordPulse",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "offers": {
+        "@type": "Offer",
+        "price": "49",
+        "priceCurrency": "USD"
+      },
+      "description": "Cloud infrastructure monitoring and alerting platform for DevOps teams."
+    }
+    </script>
+
     <link href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:400,600" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
-	<script src="https://unpkg.com/animejs@3.0.1/lib/anime.min.js"></script>
+    <script src="https://unpkg.com/animejs@3.0.1/lib/anime.min.js"></script>
     <script src="https://unpkg.com/scrollreveal@4.0.0/scrollreveal.min.js"></script>
 </head>
 <body class="is-boxed has-animations">
@@ -17,11 +53,19 @@
                 <div class="site-header-inner">
                     <div class="brand header-brand">
                         <h1 class="m-0">
-							<a href="#">
-								<img class="header-logo-image" src="/images/logo.svg" alt="Logo">
+                            <a href="/" style="color:#fff; text-decoration:none; font-size:22px; letter-spacing:-0.5px;">
+                                &#9650; NordPulse
                             </a>
                         </h1>
                     </div>
+                    <nav>
+                        <ul class="header-links list-reset" style="gap:8px;">
+                            <li><a href="#features" style="color:#8a94a7;text-decoration:none;font-size:15px;padding:8px 16px;">Features</a></li>
+                            <li><a href="#pricing" style="color:#8a94a7;text-decoration:none;font-size:15px;padding:8px 16px;">Pricing</a></li>
+                            <li><a href="/docs" style="color:#8a94a7;text-decoration:none;font-size:15px;padding:8px 16px;">Docs</a></li>
+                            <li><a href="/login" class="button button-primary" style="height:36px;padding:8px 20px;font-size:14px;">Sign in</a></li>
+                        </ul>
+                    </nav>
                 </div>
             </div>
         </header>
@@ -30,86 +74,136 @@
             <section class="hero">
                 <div class="container">
                     <div class="hero-inner">
-						<div class="hero-copy">
-	                        <h1 class="hero-title mt-0">Landing template for startups</h1>
-	                        <p class="hero-paragraph">Our landing page template works on all devices, so you only have to set it up once, and get beautiful results forever.</p>
-	                        <div class="hero-cta"><a class="button button-primary" href="#">Pre order now</a><a class="button" href="#">Get in touch</a></div>
-						</div>
-						<div class="hero-figure anime-element">
-							<svg class="placeholder" width="528" height="396" viewBox="0 0 528 396">
-								<rect width="528" height="396" style="fill:transparent;" />
-							</svg>
-							<div class="hero-figure-box hero-figure-box-01" data-rotation="45deg"></div>
-							<div class="hero-figure-box hero-figure-box-02" data-rotation="-45deg"></div>
-							<div class="hero-figure-box hero-figure-box-03" data-rotation="0deg"></div>
-							<div class="hero-figure-box hero-figure-box-04" data-rotation="-135deg"></div>
-							<div class="hero-figure-box hero-figure-box-05"></div>
-							<div class="hero-figure-box hero-figure-box-06"></div>
-							<div class="hero-figure-box hero-figure-box-07"></div>
-							<div class="hero-figure-box hero-figure-box-08" data-rotation="-22deg"></div>
-							<div class="hero-figure-box hero-figure-box-09" data-rotation="-52deg"></div>
-							<div class="hero-figure-box hero-figure-box-10" data-rotation="-50deg"></div>
-						</div>
+                        <div class="hero-copy">
+                            <h1 class="hero-title mt-0">Monitor your cloud.<br>Sleep at night.</h1>
+                            <p class="hero-paragraph">NordPulse gives your engineering team full observability across every cloud provider. Catch issues before your users do — with sub-minute alerting, beautiful dashboards, and zero configuration.</p>
+                            <div class="hero-cta">
+                                <a class="button button-primary" href="/signup">Start free trial</a>
+                                <a class="button" href="#features">See how it works</a>
+                            </div>
+                            <p style="font-size:13px;color:#5a6270;margin-top:12px;">No credit card required &mdash; 14-day free trial</p>
+                        </div>
+                        <div class="hero-figure anime-element">
+                            <svg class="placeholder" width="528" height="396" viewBox="0 0 528 396">
+                                <rect width="528" height="396" style="fill:transparent;" />
+                            </svg>
+                            <div class="hero-figure-box hero-figure-box-01" data-rotation="45deg"></div>
+                            <div class="hero-figure-box hero-figure-box-02" data-rotation="-45deg"></div>
+                            <div class="hero-figure-box hero-figure-box-03" data-rotation="0deg"></div>
+                            <div class="hero-figure-box hero-figure-box-04" data-rotation="-135deg"></div>
+                            <div class="hero-figure-box hero-figure-box-05"></div>
+                            <div class="hero-figure-box hero-figure-box-06"></div>
+                            <div class="hero-figure-box hero-figure-box-07"></div>
+                            <div class="hero-figure-box hero-figure-box-08" data-rotation="-22deg"></div>
+                            <div class="hero-figure-box hero-figure-box-09" data-rotation="-52deg"></div>
+                            <div class="hero-figure-box hero-figure-box-10" data-rotation="-50deg"></div>
+                        </div>
                     </div>
                 </div>
             </section>
 
-            <section class="features section">
+            <!-- Social proof bar -->
+            <section style="background:#242830;padding:20px 0;border-top:1px solid #2c3039;border-bottom:1px solid #2c3039;">
+                <div class="container" style="text-align:center;">
+                    <p style="color:#5a6270;font-size:14px;margin:0 0 12px;">Trusted by engineering teams at</p>
+                    <div style="display:flex;justify-content:center;align-items:center;gap:40px;flex-wrap:wrap;">
+                        <span style="color:#3b404c;font-weight:600;font-size:16px;letter-spacing:1px;">ACMECORP</span>
+                        <span style="color:#3b404c;font-weight:600;font-size:16px;letter-spacing:1px;">STACKIO</span>
+                        <span style="color:#3b404c;font-weight:600;font-size:16px;letter-spacing:1px;">DEVNORTH</span>
+                        <span style="color:#3b404c;font-weight:600;font-size:16px;letter-spacing:1px;">CLOUDNINE</span>
+                        <span style="color:#3b404c;font-weight:600;font-size:16px;letter-spacing:1px;">INFRABASE</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="features section" id="features">
                 <div class="container">
-					<div class="features-inner section-inner has-bottom-divider">
+                    <div style="text-align:center;margin-bottom:48px;">
+                        <h2 style="color:#fff;margin-top:0;">Everything your team needs to stay on top of infrastructure</h2>
+                        <p style="color:#8a94a7;max-width:600px;margin:0 auto;">From cloud VMs to Kubernetes pods to serverless functions — NordPulse monitors it all and notifies you the moment something goes wrong.</p>
+                    </div>
+                    <div class="features-inner section-inner has-bottom-divider">
                         <div class="features-wrap">
                             <div class="feature text-center is-revealing">
                                 <div class="feature-inner">
                                     <div class="feature-icon">
-										<img src="/images/feature-icon-01.svg" alt="Feature 01">
+                                        <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                                            <circle cx="20" cy="20" r="18" fill="none" stroke="#0270d7" stroke-width="2"/>
+                                            <path d="M12 20 L18 26 L28 14" stroke="#00bffb" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                                        </svg>
                                     </div>
-                                    <h4 class="feature-title mt-24">Be Productive</h4>
-                                    <p class="text-sm mb-0">Fermentum posuere urna nec tincidunt praesent semper feugiat nibh. A arcu cursus vitae congue mauris. Nam at lectus urna duis convallis. Mauris rhoncus aenean vel elit scelerisque mauris.</p>
-                                </div>
-                            </div>
-							<div class="feature text-center is-revealing">
-                                <div class="feature-inner">
-                                    <div class="feature-icon">
-										<img src="/images/feature-icon-02.svg" alt="Feature 02">
-                                    </div>
-                                    <h4 class="feature-title mt-24">Be Productive</h4>
-                                    <p class="text-sm mb-0">Fermentum posuere urna nec tincidunt praesent semper feugiat nibh. A arcu cursus vitae congue mauris. Nam at lectus urna duis convallis. Mauris rhoncus aenean vel elit scelerisque mauris.</p>
+                                    <h4 class="feature-title mt-24">Uptime Monitoring</h4>
+                                    <p class="text-sm mb-0">Check every endpoint every 30 seconds from 12 global locations. Get alerted via Slack, PagerDuty, or email the moment a service goes down.</p>
                                 </div>
                             </div>
                             <div class="feature text-center is-revealing">
                                 <div class="feature-inner">
                                     <div class="feature-icon">
-										<img src="/images/feature-icon-03.svg" alt="Feature 03">
+                                        <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="4" y="28" width="6" height="8" fill="#0270d7"/>
+                                            <rect x="14" y="18" width="6" height="18" fill="#0982f4"/>
+                                            <rect x="24" y="10" width="6" height="26" fill="#00bffb"/>
+                                            <rect x="34" y="4" width="4" height="32" fill="#0270d7"/>
+                                        </svg>
                                     </div>
-                                    <h4 class="feature-title mt-24">Be Productive</h4>
-                                    <p class="text-sm mb-0">Fermentum posuere urna nec tincidunt praesent semper feugiat nibh. A arcu cursus vitae congue mauris. Nam at lectus urna duis convallis. Mauris rhoncus aenean vel elit scelerisque mauris.</p>
+                                    <h4 class="feature-title mt-24">Performance Metrics</h4>
+                                    <p class="text-sm mb-0">Track CPU, memory, disk I/O, and network throughput across all your instances. Set thresholds and get predictive alerts before capacity runs out.</p>
                                 </div>
                             </div>
                             <div class="feature text-center is-revealing">
                                 <div class="feature-inner">
                                     <div class="feature-icon">
-										<img src="/images/feature-icon-04.svg" alt="Feature 04">
+                                        <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                                            <polygon points="20,4 36,32 4,32" fill="none" stroke="#0270d7" stroke-width="2"/>
+                                            <line x1="20" y1="16" x2="20" y2="24" stroke="#00bffb" stroke-width="2.5" stroke-linecap="round"/>
+                                            <circle cx="20" cy="28" r="1.5" fill="#00bffb"/>
+                                        </svg>
                                     </div>
-                                    <h4 class="feature-title mt-24">Be Productive</h4>
-                                    <p class="text-sm mb-0">Fermentum posuere urna nec tincidunt praesent semper feugiat nibh. A arcu cursus vitae congue mauris. Nam at lectus urna duis convallis. Mauris rhoncus aenean vel elit scelerisque mauris.</p>
-                                </div>
-                            </div>
-							<div class="feature text-center is-revealing">
-                                <div class="feature-inner">
-                                    <div class="feature-icon">
-										<img src="/images/feature-icon-05.svg" alt="Feature 05">
-                                    </div>
-                                    <h4 class="feature-title mt-24">Be Productive</h4>
-                                    <p class="text-sm mb-0">Fermentum posuere urna nec tincidunt praesent semper feugiat nibh. A arcu cursus vitae congue mauris. Nam at lectus urna duis convallis. Mauris rhoncus aenean vel elit scelerisque mauris.</p>
+                                    <h4 class="feature-title mt-24">Smart Alerting</h4>
+                                    <p class="text-sm mb-0">Reduce alert fatigue with ML-powered anomaly detection. NordPulse learns your traffic patterns and only wakes you up when it really matters.</p>
                                 </div>
                             </div>
                             <div class="feature text-center is-revealing">
                                 <div class="feature-inner">
                                     <div class="feature-icon">
-										<img src="/images/feature-icon-06.svg" alt="Feature 06">
+                                        <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="6" y="10" width="28" height="20" rx="2" fill="none" stroke="#0270d7" stroke-width="2"/>
+                                            <line x1="11" y1="16" x2="29" y2="16" stroke="#00bffb" stroke-width="1.5"/>
+                                            <line x1="11" y1="20" x2="24" y2="20" stroke="#0270d7" stroke-width="1.5"/>
+                                            <line x1="11" y1="24" x2="20" y2="24" stroke="#0270d7" stroke-width="1.5"/>
+                                        </svg>
                                     </div>
-                                    <h4 class="feature-title mt-24">Be Productive</h4>
-                                    <p class="text-sm mb-0">Fermentum posuere urna nec tincidunt praesent semper feugiat nibh. A arcu cursus vitae congue mauris. Nam at lectus urna duis convallis. Mauris rhoncus aenean vel elit scelerisque mauris.</p>
+                                    <h4 class="feature-title mt-24">Log Management</h4>
+                                    <p class="text-sm mb-0">Centralize logs from all your services with structured search and retention policies. Correlate logs with metrics for instant root-cause analysis.</p>
+                                </div>
+                            </div>
+                            <div class="feature text-center is-revealing">
+                                <div class="feature-inner">
+                                    <div class="feature-icon">
+                                        <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                                            <circle cx="20" cy="20" r="10" fill="none" stroke="#0270d7" stroke-width="2"/>
+                                            <circle cx="20" cy="20" r="3" fill="#00bffb"/>
+                                            <line x1="20" y1="4" x2="20" y2="10" stroke="#0270d7" stroke-width="2"/>
+                                            <line x1="20" y1="30" x2="20" y2="36" stroke="#0270d7" stroke-width="2"/>
+                                            <line x1="4" y1="20" x2="10" y2="20" stroke="#0270d7" stroke-width="2"/>
+                                            <line x1="30" y1="20" x2="36" y2="20" stroke="#0270d7" stroke-width="2"/>
+                                        </svg>
+                                    </div>
+                                    <h4 class="feature-title mt-24">Multi-Cloud Support</h4>
+                                    <p class="text-sm mb-0">Connect AWS, GCP, Azure, and on-premise infrastructure in minutes. A unified view of your entire stack — no matter where it runs.</p>
+                                </div>
+                            </div>
+                            <div class="feature text-center is-revealing">
+                                <div class="feature-inner">
+                                    <div class="feature-icon">
+                                        <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M8 32 C8 20 14 14 20 14 C26 14 32 20 32 32" fill="none" stroke="#0270d7" stroke-width="2"/>
+                                            <rect x="15" y="8" width="10" height="8" rx="2" fill="none" stroke="#00bffb" stroke-width="1.5"/>
+                                            <line x1="12" y1="32" x2="28" y2="32" stroke="#0270d7" stroke-width="2"/>
+                                        </svg>
+                                    </div>
+                                    <h4 class="feature-title mt-24">API & Integrations</h4>
+                                    <p class="text-sm mb-0">A fully documented REST API lets you automate everything. Native integrations with Grafana, Terraform, GitHub Actions, and 40+ more tools.</p>
                                 </div>
                             </div>
                         </div>
@@ -117,38 +211,76 @@
                 </div>
             </section>
 
-            <section class="pricing section">
+            <!-- Testimonials -->
+            <section style="padding:48px 0;">
+                <div class="container">
+                    <h2 style="color:#fff;text-align:center;margin-bottom:40px;margin-top:0;">What our customers say</h2>
+                    <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;">
+                        <div style="background:#242830;border-radius:4px;padding:28px;max-width:340px;flex:1;min-width:260px;">
+                            <p style="color:#8a94a7;font-size:16px;line-height:26px;margin-bottom:16px;">"NordPulse caught a memory leak in our payment service at 2 AM before any customer noticed. The anomaly detection is genuinely impressive."</p>
+                            <p style="color:#fff;font-size:14px;font-weight:600;margin:0;">Sarah K. &mdash; <span style="color:#5a6270;font-weight:400;">SRE Lead at StackIO</span></p>
+                        </div>
+                        <div style="background:#242830;border-radius:4px;padding:28px;max-width:340px;flex:1;min-width:260px;">
+                            <p style="color:#8a94a7;font-size:16px;line-height:26px;margin-bottom:16px;">"We replaced three separate tools with NordPulse. Setup took an afternoon. The savings in both cost and cognitive overhead are huge."</p>
+                            <p style="color:#fff;font-size:14px;font-weight:600;margin:0;">Marcus T. &mdash; <span style="color:#5a6270;font-weight:400;">CTO at DevNorth</span></p>
+                        </div>
+                        <div style="background:#242830;border-radius:4px;padding:28px;max-width:340px;flex:1;min-width:260px;">
+                            <p style="color:#8a94a7;font-size:16px;line-height:26px;margin-bottom:16px;">"The Kubernetes support is excellent. We monitor 200+ pods across 4 clusters and the dashboard is still fast and easy to navigate."</p>
+                            <p style="color:#fff;font-size:14px;font-weight:600;margin:0;">Priya M. &mdash; <span style="color:#5a6270;font-weight:400;">Platform Eng. at CloudNine</span></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="pricing section" id="pricing">
                 <div class="container-sm">
                     <div class="pricing-inner section-inner">
                         <div class="pricing-header text-center">
-                            <h2 class="section-title mt-0">Unlimited for all</h2>
-                            <p class="section-paragraph mb-0">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut ad quis nostrud.</p>
+                            <h2 class="section-title mt-0">Simple, transparent pricing</h2>
+                            <p class="section-paragraph mb-0">Start free for 14 days. No credit card required. Scale as you grow — cancel any time.</p>
                         </div>
-						<div class="pricing-tables-wrap">
+                        <div class="pricing-tables-wrap">
                             <div class="pricing-table">
                                 <div class="pricing-table-inner is-revealing">
                                     <div class="pricing-table-main">
                                         <div class="pricing-table-header pb-24">
+                                            <p style="color:#8a94a7;font-size:14px;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;">Starter</p>
                                             <div class="pricing-table-price"><span class="pricing-table-price-currency h2">$</span><span class="pricing-table-price-amount h1">49</span><span class="text-xs">/month</span></div>
+                                            <p style="color:#5a6270;font-size:13px;margin:8px 0 0;">Up to 10 hosts &bull; 3 team members</p>
                                         </div>
-										<div class="pricing-table-features-title text-xs pt-24 pb-24">What you will get</div>
+                                        <div class="pricing-table-features-title text-xs pt-24 pb-24">What's included</div>
                                         <ul class="pricing-table-features list-reset text-xs">
-                                            <li>
-                                                <span>Lorem ipsum dolor sit nisi</span>
-                                            </li>
-                                            <li>
-                                                <span>Lorem ipsum dolor sit nisi</span>
-                                            </li>
-                                            <li>
-                                                <span>Lorem ipsum dolor sit nisi</span>
-                                            </li>
-											<li>
-												<span>Lorem ipsum dolor sit nisi</span>
-											</li>
+                                            <li><span>Uptime checks every 60 seconds</span></li>
+                                            <li><span>30-day metric retention</span></li>
+                                            <li><span>Slack &amp; email alerts</span></li>
+                                            <li><span>REST API access</span></li>
+                                            <li><span>AWS, GCP, Azure integrations</span></li>
                                         </ul>
                                     </div>
                                     <div class="pricing-table-cta mb-8">
-                                        <a class="button button-primary button-shadow button-block" href="#">Pre order now</a>
+                                        <a class="button button-primary button-shadow button-block" href="/signup">Start free trial</a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="pricing-table">
+                                <div class="pricing-table-inner is-revealing" style="border:1px solid #0270d7;">
+                                    <div class="pricing-table-main">
+                                        <div class="pricing-table-header pb-24">
+                                            <p style="color:#0270d7;font-size:14px;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;">Pro &nbsp;<span style="background:#0270d7;color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;">Most popular</span></p>
+                                            <div class="pricing-table-price"><span class="pricing-table-price-currency h2">$</span><span class="pricing-table-price-amount h1">149</span><span class="text-xs">/month</span></div>
+                                            <p style="color:#5a6270;font-size:13px;margin:8px 0 0;">Unlimited hosts &bull; 20 team members</p>
+                                        </div>
+                                        <div class="pricing-table-features-title text-xs pt-24 pb-24">Everything in Starter, plus</div>
+                                        <ul class="pricing-table-features list-reset text-xs">
+                                            <li><span>30-second uptime checks</span></li>
+                                            <li><span>1-year metric retention</span></li>
+                                            <li><span>PagerDuty &amp; OpsGenie</span></li>
+                                            <li><span>Anomaly detection (ML)</span></li>
+                                            <li><span>Log management &amp; search</span></li>
+                                        </ul>
+                                    </div>
+                                    <div class="pricing-table-cta mb-8">
+                                        <a class="button button-primary button-shadow button-block" href="/signup?plan=pro">Start free trial</a>
                                     </div>
                                 </div>
                             </div>
@@ -157,49 +289,33 @@
                 </div>
             </section>
 
-			<section class="cta section">
-				<div class="container">
-					<div class="cta-inner section-inner">
-						<h3 class="section-title mt-0">Still not convinced on buying?</h3>
-						<div class="cta-cta">
-							<a class="button button-primary button-wide-mobile" href="#">Get in touch</a>
-						</div>
-					</div>
-				</div>
-			</section>
+            <section class="cta section">
+                <div class="container">
+                    <div class="cta-inner section-inner">
+                        <h3 class="section-title mt-0">Ready to get full visibility into your infrastructure?</h3>
+                        <div class="cta-cta">
+                            <a class="button button-primary button-wide-mobile" href="/signup">Get started free</a>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </main>
 
         <footer class="site-footer">
             <div class="container">
                 <div class="site-footer-inner">
                     <div class="brand footer-brand">
-						<a href="#">
-							<img class="header-logo-image" src="/images/logo.svg" alt="Logo">
-						</a>
+                        <a href="/" style="color:#fff;text-decoration:none;font-weight:600;">&#9650; NordPulse</a>
                     </div>
                     <ul class="footer-links list-reset">
-                        <li>
-                            <a href="#">Contact</a>
-                        </li>
-                        <li>
-                            <a href="#">About us</a>
-                        </li>
-                        <li>
-                            <a href="#">FAQ's</a>
-                        </li>
-                        <li>
-                            <a href="#">Support</a>
-                        </li>
+                        <li><a href="/about">About</a></li>
+                        <li><a href="/docs">Documentation</a></li>
+                        <li><a href="/blog">Blog</a></li>
+                        <li><a href="/contact">Contact</a></li>
+                        <li><a href="/privacy">Privacy</a></li>
+                        <li><a href="/terms">Terms</a></li>
                     </ul>
                     <ul class="footer-social-links list-reset">
-                        <li>
-                            <a href="#">
-                                <span class="screen-reader-text">Facebook</span>
-                                <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M6.023 16L6 9H3V6h3V4c0-2.7 1.672-4 4.08-4 1.153 0 2.144.086 2.433.124v2.821h-1.67c-1.31 0-1.563.623-1.563 1.536V6H13l-1 3H9.28v7H6.023z" fill="#0270D7"/>
-                                </svg>
-                            </a>
-                        </li>
                         <li>
                             <a href="#">
                                 <span class="screen-reader-text">Twitter</span>
@@ -210,14 +326,14 @@
                         </li>
                         <li>
                             <a href="#">
-                                <span class="screen-reader-text">Google</span>
+                                <span class="screen-reader-text">GitHub</span>
                                 <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M7.9 7v2.4H12c-.2 1-1.2 3-4 3-2.4 0-4.3-2-4.3-4.4 0-2.4 2-4.4 4.3-4.4 1.4 0 2.3.6 2.8 1.1l1.9-1.8C11.5 1.7 9.9 1 8 1 4.1 1 1 4.1 1 8s3.1 7 7 7c4 0 6.7-2.8 6.7-6.8 0-.5 0-.8-.1-1.2H7.9z" fill="#0270D7"/>
+                                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" fill="#0270D7"/>
                                 </svg>
                             </a>
                         </li>
                     </ul>
-                    <div class="footer-copyright">&copy; 2019 Solid, all rights reserved</div>
+                    <div class="footer-copyright">&copy; 2024 NordPulse AB &mdash; Stockholm, Sweden</div>
                 </div>
             </div>
         </footer>

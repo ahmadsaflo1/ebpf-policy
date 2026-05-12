@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -94,9 +95,25 @@ func httpsRedirector(destPort int) http.HandlerFunc {
 	})
 }
 
+// responseRecorder captures the status code written by the underlying handler.
+type responseRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rr *responseRecorder) WriteHeader(code int) {
+	rr.status = code
+	rr.ResponseWriter.WriteHeader(code)
+}
+
 func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// get the client IP
+	// get the client IP, respecting X-Forwarded-For for proxied deployments
 	remote, _, _ := net.SplitHostPort(req.RemoteAddr)
+	if fwd := req.Header.Get("X-Forwarded-For"); fwd != "" {
+		if parts := strings.SplitN(fwd, ",", 2); len(parts) > 0 {
+			remote = strings.TrimSpace(parts[0])
+		}
+	}
 	ip := net.ParseIP(remote)
 
 	log := slog.With(
@@ -105,20 +122,31 @@ func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		"ref", req.Referer(),
 		"path", req.RequestURI,
 		"agent", req.UserAgent(),
+		"method", req.Method,
+		"content_type", req.Header.Get("Content-Type"),
 	)
 
-	// in your handlers use
-	// log := LogContext(r.Context())
 	r := req.WithContext(NewLogContext(req.Context(), log))
 
-	// log the request
-	log.Info(r.Method)
+	// capture POST body (e.g. login attempts, form submissions) up to 64 KB
+	if req.Method == http.MethodPost {
+		body, err := io.ReadAll(io.LimitReader(req.Body, 64<<10))
+		if err == nil {
+			req.Body.Close()
+			req.Body = io.NopCloser(bytes.NewReader(body))
+			log.Warn("POST", "body", string(body))
+		}
+	}
 
 	// if we get a panic attack, report it
 	defer crashReport(w, r)
 
-	// serve some nice content
-	http.ServeFileFS(w, r, s.dir, r.URL.Path)
+	rr := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
+
+	// serve static files; on 404 fall through to a plain 404 response
+	http.ServeFileFS(rr, r, s.dir, r.URL.Path)
+
+	log.Info("response", "status", rr.status)
 }
 
 type logContext struct{}

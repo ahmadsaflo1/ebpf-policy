@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://test.kollectra.com/sitemap.xml

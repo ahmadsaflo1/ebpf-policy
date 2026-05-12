@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign In – NordPulse</title>
+    <meta name="robots" content="noindex, follow">
+    <link href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:400,600" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .login-wrap {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #1d2026;
+        }
+        .login-box {
+            background: #242830;
+            border-radius: 4px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 24px 48px rgba(0,0,0,0.3);
+        }
+        .login-logo {
+            text-align: center;
+            margin-bottom: 32px;
+            color: #fff;
+            font-size: 20px;
+            font-weight: 600;
+            text-decoration: none;
+            display: block;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            color: #8a94a7;
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+        .form-group input {
+            width: 100%;
+            background: #1d2026;
+            border: 1px solid #2c3039;
+            border-radius: 2px;
+            color: #fff;
+            font-size: 16px;
+            padding: 12px 14px;
+            box-sizing: border-box;
+            font-family: "IBM Plex Sans", sans-serif;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #0270d7;
+        }
+        .form-group input::placeholder {
+            color: #3b404c;
+        }
+        .login-submit {
+            width: 100%;
+            background: linear-gradient(65deg, #0270d7 0, #0f8afd 100%);
+            color: #fff;
+            border: none;
+            border-radius: 2px;
+            font-size: 15px;
+            font-weight: 600;
+            padding: 14px;
+            cursor: pointer;
+            margin-top: 8px;
+            font-family: "IBM Plex Sans", sans-serif;
+        }
+        .login-submit:hover {
+            background: linear-gradient(65deg, #0275e1 0, #198ffd 100%);
+        }
+        .login-footer {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 14px;
+            color: #5a6270;
+        }
+        .login-footer a {
+            color: #0270d7;
+            text-decoration: none;
+        }
+        .login-divider {
+            border: none;
+            border-top: 1px solid #2c3039;
+            margin: 24px 0;
+        }
+    </style>
+</head>
+<body style="margin:0;background:#1d2026;">
+    <div class="login-wrap">
+        <div class="login-box">
+            <a href="/" class="login-logo">&#9650; NordPulse</a>
+
+            <form method="POST" action="/api/auth/login">
+                <div class="form-group">
+                    <label for="email">Work email</label>
+                    <input type="email" id="email" name="email" placeholder="you@company.com" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="login-submit">Sign in</button>
+            </form>
+
+            <hr class="login-divider">
+
+            <div class="login-footer">
+                <a href="/forgot-password">Forgot your password?</a>
+                &nbsp;&middot;&nbsp;
+                <a href="/signup">Create account</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
