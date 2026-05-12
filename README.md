@@ -441,7 +441,7 @@ make run-webserver
 make install-service
 
 # View live logs
-journalctl -u ebpf-webserver -f
+make logs-webserver
 
 # Check status
 make service-status
@@ -482,6 +482,8 @@ make install-service      # Install webserver as a persistent systemd service
 make uninstall-service    # Remove the systemd service
 make service-status       # Show systemd service status
 make status               # Show running infrastructure containers
+make logs-webserver       # Stream webserver logs (systemd)
+make logs-policyserver    # Stream policy-server logs (Docker)
 make logs-db              # Stream TimescaleDB logs
 make logs-nats            # Stream NATS logs
 make logs-grafana         # Stream Grafana logs
@@ -613,7 +615,7 @@ make run-webserver
 make install-service
 
 # Logs
-journalctl -u ebpf-webserver -f
+make logs-webserver
 ```
 
 To update the binary on an edge machine after a code change:

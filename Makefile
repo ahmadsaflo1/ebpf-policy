@@ -1,4 +1,4 @@
-.PHONY: build start stop help build-policyserver build-webserver start-infra stop-infra run-policyserver run-webserver db-flush clean status logs-db logs-nats logs-grafana set-caps install-service uninstall-service service-status
+.PHONY: build start stop help build-policyserver build-webserver start-infra stop-infra run-policyserver run-webserver db-flush clean status logs-db logs-nats logs-grafana logs-webserver logs-policyserver set-caps install-service uninstall-service service-status
 
 POLICYSERVER_CONFIG ?= policyserver.conf
 WEBSERVER_CONFIG    ?= webserver.conf
@@ -132,3 +132,11 @@ logs-nats:
 logs-grafana:
 	@echo "Streaming Grafana logs (Ctrl+C to exit)..."
 	docker logs -f grafana
+
+logs-webserver:
+	@echo "Streaming webserver logs (Ctrl+C to exit)..."
+	journalctl -u ebpf-webserver.service -f
+
+logs-policyserver:
+	@echo "Streaming policy-server logs (Ctrl+C to exit)..."
+	docker logs -f policy-server
