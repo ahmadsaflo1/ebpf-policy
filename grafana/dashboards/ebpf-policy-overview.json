@@ -78,7 +78,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT AVG(cpu_percent) / 1000.0 as \"CPU Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '5 minutes'",
+          "rawSql": "SELECT AVG(cpu_percent) / 1000.0 as \"CPU Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '30 seconds'",
           "refId": "A"
         }
       ],
@@ -141,7 +141,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT AVG(memory_percent) / 1000.0 as \"Memory Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '5 minutes'",
+          "rawSql": "SELECT AVG(memory_percent) / 1000.0 as \"Memory Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '30 seconds'",
           "refId": "A"
         }
       ],
@@ -204,7 +204,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT AVG(disk_percent) / 1000.0 as \"Disk Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '5 minutes'",
+          "rawSql": "SELECT AVG(disk_percent) / 1000.0 as \"Disk Usage\" FROM system_metrics WHERE time > NOW() - INTERVAL '30 seconds'",
           "refId": "A"
         }
       ],
