@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Documentation – NordPulse</title>
+    <meta name="description" content="NordPulse documentation. Learn how to set up monitoring, configure alerts, and integrate with your infrastructure.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://test.kollectra.com/docs">
+    <link href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:400,600" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        body { background: #1d2026; color: #c8d0e0; margin: 0; font-family: "IBM Plex Sans", sans-serif; }
+        .docs-header {
+            background: #242830;
+            border-bottom: 1px solid #2c3039;
+            padding: 0 40px;
+            display: flex;
+            align-items: center;
+            height: 60px;
+        }
+        .docs-logo { color: #fff; font-size: 18px; font-weight: 600; text-decoration: none; }
+        .docs-nav { margin-left: auto; }
+        .docs-nav a { color: #8a94a7; text-decoration: none; font-size: 14px; margin-left: 24px; }
+        .docs-nav a:hover { color: #fff; }
+        .docs-wrap { max-width: 840px; margin: 60px auto; padding: 0 24px; }
+        .docs-wrap h1 { color: #fff; font-size: 32px; margin-bottom: 8px; }
+        .docs-wrap p { line-height: 1.7; color: #8a94a7; }
+        .docs-section { margin-top: 48px; }
+        .docs-section h2 { color: #fff; font-size: 20px; border-bottom: 1px solid #2c3039; padding-bottom: 12px; }
+        .docs-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-top: 24px; }
+        .docs-card {
+            background: #242830;
+            border: 1px solid #2c3039;
+            border-radius: 4px;
+            padding: 20px;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        .docs-card:hover { border-color: #0270d7; }
+        .docs-card h3 { color: #fff; font-size: 15px; margin: 0 0 8px; }
+        .docs-card p { font-size: 13px; margin: 0; color: #8a94a7; }
+    </style>
+</head>
+<body>
+    <header class="docs-header">
+        <a href="/" class="docs-logo">&#9650; NordPulse</a>
+        <nav class="docs-nav">
+            <a href="/login">Sign in</a>
+            <a href="/signup">Get started</a>
+        </nav>
+    </header>
+    <div class="docs-wrap">
+        <h1>Documentation</h1>
+        <p>Everything you need to get started with NordPulse and make the most of your monitoring setup.</p>
+
+        <div class="docs-section">
+            <h2>Getting started</h2>
+            <div class="docs-card-grid">
+                <a href="#" class="docs-card">
+                    <h3>Quick start</h3>
+                    <p>Connect your first infrastructure in under 5 minutes.</p>
+                </a>
+                <a href="#" class="docs-card">
+                    <h3>Install the agent</h3>
+                    <p>Deploy the lightweight collector on any Linux host.</p>
+                </a>
+                <a href="#" class="docs-card">
+                    <h3>Cloud integrations</h3>
+                    <p>Connect AWS, GCP, and Azure with read-only IAM roles.</p>
+                </a>
+            </div>
+        </div>
+
+        <div class="docs-section">
+            <h2>Alerting</h2>
+            <div class="docs-card-grid">
+                <a href="#" class="docs-card">
+                    <h3>Alert rules</h3>
+                    <p>Define threshold and anomaly-based alert policies.</p>
+                </a>
+                <a href="#" class="docs-card">
+                    <h3>Notification channels</h3>
+                    <p>Route alerts to Slack, PagerDuty, email, and more.</p>
+                </a>
+            </div>
+        </div>
+
+        <div class="docs-section">
+            <h2>API reference</h2>
+            <div class="docs-card-grid">
+                <a href="#" class="docs-card">
+                    <h3>REST API</h3>
+                    <p>Manage monitors and alerts programmatically.</p>
+                </a>
+                <a href="#" class="docs-card">
+                    <h3>Webhooks</h3>
+                    <p>Receive real-time event payloads to your own endpoint.</p>
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

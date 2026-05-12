@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pricing – NordPulse</title>
+    <meta name="description" content="Simple, transparent pricing for NordPulse cloud infrastructure monitoring. Start free, scale as you grow.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://test.kollectra.com/pricing">
+    <link href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:400,600" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        body { background: #1d2026; color: #c8d0e0; margin: 0; font-family: "IBM Plex Sans", sans-serif; }
+        .pricing-header {
+            background: #242830;
+            border-bottom: 1px solid #2c3039;
+            padding: 0 40px;
+            display: flex;
+            align-items: center;
+            height: 60px;
+        }
+        .pricing-logo { color: #fff; font-size: 18px; font-weight: 600; text-decoration: none; }
+        .pricing-nav { margin-left: auto; }
+        .pricing-nav a { color: #8a94a7; text-decoration: none; font-size: 14px; margin-left: 24px; }
+        .pricing-nav a:hover { color: #fff; }
+        .pricing-wrap { max-width: 960px; margin: 60px auto; padding: 0 24px; text-align: center; }
+        .pricing-wrap h1 { color: #fff; font-size: 36px; margin-bottom: 12px; }
+        .pricing-wrap > p { color: #8a94a7; font-size: 17px; margin-bottom: 56px; }
+        .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; text-align: left; }
+        .plan {
+            background: #242830;
+            border: 1px solid #2c3039;
+            border-radius: 4px;
+            padding: 32px;
+        }
+        .plan.featured { border-color: #0270d7; }
+        .plan-badge {
+            display: inline-block;
+            background: #0270d7;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 2px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+        .plan-name { color: #fff; font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+        .plan-price { color: #fff; font-size: 36px; font-weight: 600; margin: 16px 0 4px; }
+        .plan-price span { font-size: 16px; color: #8a94a7; font-weight: 400; }
+        .plan-desc { color: #8a94a7; font-size: 14px; margin-bottom: 24px; border-bottom: 1px solid #2c3039; padding-bottom: 24px; }
+        .plan-features { list-style: none; padding: 0; margin: 0 0 28px; }
+        .plan-features li { color: #c8d0e0; font-size: 14px; padding: 6px 0; }
+        .plan-features li::before { content: "✓"; color: #0270d7; margin-right: 10px; font-weight: 600; }
+        .plan-btn {
+            display: block;
+            text-align: center;
+            padding: 12px;
+            border-radius: 2px;
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .plan-btn-primary {
+            background: linear-gradient(65deg, #0270d7 0, #0f8afd 100%);
+            color: #fff;
+        }
+        .plan-btn-secondary {
+            background: transparent;
+            color: #0270d7;
+            border: 1px solid #0270d7;
+        }
+        .pricing-footer { margin-top: 48px; color: #5a6270; font-size: 14px; }
+        .pricing-footer a { color: #0270d7; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <header class="pricing-header">
+        <a href="/" class="pricing-logo">&#9650; NordPulse</a>
+        <nav class="pricing-nav">
+            <a href="/docs">Docs</a>
+            <a href="/login">Sign in</a>
+            <a href="/signup">Get started</a>
+        </nav>
+    </header>
+    <div class="pricing-wrap">
+        <h1>Simple, transparent pricing</h1>
+        <p>Start free. Scale as your infrastructure grows. No hidden fees.</p>
+
+        <div class="plans">
+            <div class="plan">
+                <p class="plan-name">Starter</p>
+                <div class="plan-price">$0 <span>/ month</span></div>
+                <p class="plan-desc">Perfect for personal projects and small teams getting started.</p>
+                <ul class="plan-features">
+                    <li>Up to 5 monitored hosts</li>
+                    <li>1-minute check intervals</li>
+                    <li>7-day data retention</li>
+                    <li>Email alerts</li>
+                    <li>Community support</li>
+                </ul>
+                <a href="/signup" class="plan-btn plan-btn-secondary">Start for free</a>
+            </div>
+
+            <div class="plan featured">
+                <div class="plan-badge">Most popular</div>
+                <p class="plan-name">Pro</p>
+                <div class="plan-price">$49 <span>/ month</span></div>
+                <p class="plan-desc">For growing teams that need reliable alerting and deeper insights.</p>
+                <ul class="plan-features">
+                    <li>Up to 50 monitored hosts</li>
+                    <li>30-second check intervals</li>
+                    <li>90-day data retention</li>
+                    <li>Slack, PagerDuty & email alerts</li>
+                    <li>Cloud integrations (AWS, GCP, Azure)</li>
+                    <li>Priority support</li>
+                </ul>
+                <a href="/signup" class="plan-btn plan-btn-primary">Get started</a>
+            </div>
+
+            <div class="plan">
+                <p class="plan-name">Enterprise</p>
+                <div class="plan-price">Custom</div>
+                <p class="plan-desc">For large organizations with advanced security and compliance needs.</p>
+                <ul class="plan-features">
+                    <li>Unlimited hosts</li>
+                    <li>15-second check intervals</li>
+                    <li>1-year+ data retention</li>
+                    <li>SSO / SAML</li>
+                    <li>Audit logs & RBAC</li>
+                    <li>Dedicated SLA & support</li>
+                </ul>
+                <a href="mailto:sales@nordpulse.io" class="plan-btn plan-btn-secondary">Contact sales</a>
+            </div>
+        </div>
+
+        <p class="pricing-footer">All plans include a 14-day free trial. No credit card required. <a href="/docs">See full feature comparison &rarr;</a></p>
+    </div>
+</body>
+</html>

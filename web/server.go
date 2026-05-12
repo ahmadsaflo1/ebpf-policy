@@ -143,8 +143,17 @@ func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	rr := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
 
-	// serve static files; on 404 fall through to a plain 404 response
-	http.ServeFileFS(rr, r, s.dir, r.URL.Path)
+	// For extensionless paths, try <path>.html before falling through to 404.
+	urlPath := r.URL.Path
+	if urlPath != "/" {
+		base := urlPath[strings.LastIndex(urlPath, "/")+1:]
+		if !strings.Contains(base, ".") {
+			if _, err := fs.Stat(s.dir, strings.TrimPrefix(urlPath+".html", "/")); err == nil {
+				urlPath = urlPath + ".html"
+			}
+		}
+	}
+	http.ServeFileFS(rr, r, s.dir, urlPath)
 
 	log.Info("response", "status", rr.status)
 }
