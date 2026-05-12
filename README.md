@@ -405,28 +405,49 @@ topic     = "production"        # leave empty for all topics
 
 ## Quick Start (using Make)
 
-The Makefile wraps all steps. Infrastructure (TimescaleDB, NATS, Grafana) runs in Docker.
+The Makefile wraps all steps. The policy server and all infrastructure (TimescaleDB, NATS, Grafana) run in Docker with `restart: unless-stopped`, so they survive reboots and crashes automatically.
+
+### Server machine
 
 ```bash
-# 1. Start infrastructure (TimescaleDB, NATS, Grafana) — waits until DB is ready
-make start-infra
+# 1. Build the webserver + eBPF agent (policy-server is built inside Docker)
+make build-webserver
 
-# 2. Build all binaries
-make build
+# 2. Start everything — builds the policy-server Docker image, then starts
+#    TimescaleDB, NATS, Grafana, and policy-server. Waits until DB is ready.
+make start
+```
 
-# 3. In one terminal — start the policy server
-make run-policyserver
+Policy server and infrastructure are now running persistently. To stop them:
 
-# 4. In a second terminal — start the webserver + agent
-#    Edit webserver.conf first: set agent.interface (ip link show)
+```bash
+make stop
+```
+
+### Edge machine (webserver + eBPF agent)
+
+Edit `webserver.conf` first — set `agent.interface` (run `ip link show` to find the interface name) and update `nats.url` / `agent.serverurl` with the server's IP address.
+
+**Development (foreground, logs to terminal):**
+
+```bash
 make run-webserver
 ```
 
-Use custom config files:
+**Production (persistent systemd service — survives reboots, restarts on failure):**
 
 ```bash
-make run-policyserver POLICYSERVER_CONFIG=policyserver.conf
-make run-webserver WEBSERVER_CONFIG=webserver.conf
+# Install and start the service (runs as the ubuntu user, not root)
+make install-service
+
+# View live logs
+journalctl -u ebpf-webserver -f
+
+# Check status
+make service-status
+
+# Remove the service
+make uninstall-service
 ```
 
 ### Verify it is working
@@ -449,13 +470,17 @@ http://<server-ip>:3000
 
 ```bash
 make build                # Build policy-server and webserver (includes eBPF)
-make build-policyserver   # Build policy server only
+make build-policyserver   # Build policy server binary only
 make build-webserver      # Build webserver + agent (includes eBPF compilation + setcap)
-make run-policyserver     # Run policy server (default config: policyserver.conf)
-make run-webserver        # Run webserver + agent in JSON log mode (default config: webserver.conf)
-make start-infra          # Start TimescaleDB, NATS, and Grafana — waits for DB ready
+make start                # Start all infra + policy-server (docker compose)
+make stop                 # Stop all infra and webserver
+make start-infra          # Same as start
 make stop-infra           # Stop infrastructure containers
-make stop                 # Stop all processes and containers
+make run-policyserver     # Run policy server locally without Docker
+make run-webserver        # Run webserver + agent in foreground (JSON log mode)
+make install-service      # Install webserver as a persistent systemd service
+make uninstall-service    # Remove the systemd service
+make service-status       # Show systemd service status
 make status               # Show running infrastructure containers
 make logs-db              # Stream TimescaleDB logs
 make logs-nats            # Stream NATS logs
@@ -509,6 +534,10 @@ go build -o webserver ./cmd/webserver/
 
 ### Policy Server
 
+The policy server runs inside Docker as part of the `docker compose` stack. It starts automatically with `make start` and restarts on failure or machine reboot.
+
+To run it locally outside Docker (e.g. for development):
+
 ```bash
 ./policy-server -c policyserver.conf
 ```
@@ -533,6 +562,68 @@ sudo setcap cap_bpf,cap_net_admin,cap_perfmon+ep ./webserver
 | `-q` | `false` | Quiet mode — disable stdout, send logs to NATS JetStream only |
 
 > **Note:** Run the webserver with `-f json` so the policy server can unmarshal log lines received via NATS JetStream on `log.>`.
+
+---
+
+## Running the agent on an additional machine
+
+Only the `webserver` binary and `webserver.conf` are needed on each edge machine. The policy server and infrastructure stay on the central server.
+
+### 1. Install dependencies on the edge machine
+
+```bash
+sudo apt update
+sudo apt install -y clang llvm libbpf-dev linux-headers-$(uname -r) make git gcc
+```
+
+Install Go and clone the repository (see [Installation](#installation)).
+
+### 2. Build the webserver
+
+```bash
+make build-webserver
+```
+
+### 3. Configure
+
+Edit `webserver.conf` — replace `localhost` with the policy server's IP address:
+
+```toml
+[nats]
+url = "nats://<server-ip>:4222"
+
+[agent]
+interface = "eth0"           # run: ip link show
+agentid   = "agent-2"        # unique per machine
+serverurl = "http://<server-ip>:8080"
+topic     = "production"
+```
+
+### 4. Run
+
+**Foreground:**
+
+```bash
+make run-webserver
+```
+
+**Persistent service (survives reboots, runs as non-root):**
+
+```bash
+make install-service
+
+# Logs
+journalctl -u ebpf-webserver -f
+```
+
+To update the binary on an edge machine after a code change:
+
+```bash
+make build-webserver
+sudo systemctl restart ebpf-webserver
+```
+
+---
 
 ### HTTPS with Let's Encrypt
 

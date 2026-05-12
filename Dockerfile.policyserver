@@ -1,0 +1,15 @@
+FROM golang:latest AS builder
+WORKDIR /app
+ENV CGO_ENABLED=0
+ENV GOTOOLCHAIN=local
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -ldflags="-s -w" -o policy-server ./cmd/policyserver/
+
+FROM debian:bookworm-slim
+RUN addgroup --system policyserver && \
+    adduser --system --ingroup policyserver --no-create-home policyserver
+COPY --from=builder /app/policy-server /usr/local/bin/policy-server
+USER policyserver
+ENTRYPOINT ["/usr/local/bin/policy-server"]

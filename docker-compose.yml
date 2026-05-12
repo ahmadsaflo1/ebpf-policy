@@ -15,6 +15,11 @@ services:
       - timescaledb-data:/var/lib/postgresql/data
     networks:
       - ebpf-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ebpf_user -d policy_metrics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   nats:
     image: nats:latest
@@ -43,6 +48,31 @@ services:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - ebpf-network
+
+  policy-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.policyserver
+    container_name: policy-server
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - NATS_URL=nats://nats:4222
+      - POSTGRES_HOST=timescaledb
+      - POSTGRES_USER=ebpf_user
+      - POSTGRES_PASSWORD=ebpf_secret_password
+      - POSTGRES_DB=policy_metrics
+    volumes:
+      - ./policyserver.conf:/etc/policyserver.conf:ro
+    command: ["-c", "/etc/policyserver.conf"]
+    ports:
+      - "8080:8080"
     networks:
       - ebpf-network
 
