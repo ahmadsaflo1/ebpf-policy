@@ -17,3 +17,6 @@ ebpf/*.o
 
 .env
 .vscode/
+
+# SSL-certifikat — ska aldrig pushas
+certs/
