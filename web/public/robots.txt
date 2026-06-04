@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://test.kollectra.com/sitemap.xml
+Sitemap: https://www.kollectra.com/sitemap.xml
