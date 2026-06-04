@@ -125,7 +125,7 @@ func createTimescaleTables() error {
 	DB.Exec(`CREATE INDEX IF NOT EXISTS idx_system_metrics_agent ON system_metrics (agent_id, time DESC)`)
 
 	// Add retention policies (auto-delete old data)
-	// Keep client_stats for 30 days
+	// Keep client_stats for 7 days
 	_, err = DB.Exec(`
 	SELECT add_retention_policy('client_stats', INTERVAL '7 days', if_not_exists => TRUE)`)
 	if err != nil {
@@ -140,7 +140,7 @@ func createTimescaleTables() error {
 	}
 
 	log.Println("✅ TimescaleDB tables and hypertables created")
-	log.Println("✅ Retention policies: client_stats=30d, system_metrics=7d")
+	log.Println("✅ Retention policies: client_stats=7d, system_metrics=7d")
 
 	return nil
 }
