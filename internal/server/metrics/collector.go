@@ -38,7 +38,12 @@ func StartCollector() {
 }
 
 // saveClientStats inserts a single per-IP stat row into the client_stats table.
+// Rows where all activity counters are zero are skipped to avoid storing idle state.
 func saveClientStats(agentID string, stat models.ClientStats) {
+	if stat.ReqPerSec == 0 && stat.Blocked == 0 && stat.RateLimited == 0 && stat.Passed == 0 {
+		return
+	}
+
 	_, err := db.DB.Exec(`
 		INSERT INTO client_stats (
 			time, agent_id, ip, req_per_sec, blocked, rate_limited, passed,

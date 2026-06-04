@@ -127,7 +127,7 @@ func createTimescaleTables() error {
 	// Add retention policies (auto-delete old data)
 	// Keep client_stats for 30 days
 	_, err = DB.Exec(`
-	SELECT add_retention_policy('client_stats', INTERVAL '30 days', if_not_exists => TRUE)`)
+	SELECT add_retention_policy('client_stats', INTERVAL '7 days', if_not_exists => TRUE)`)
 	if err != nil {
 		log.Printf("Warning: Could not add retention policy for client_stats: %v", err)
 	}
