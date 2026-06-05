@@ -74,6 +74,7 @@
 | `policy.update.<tag>` | Server → Agents | Core NATS | New or updated rule for a specific environment |
 | `policy.delete` | Server → Agents | Core NATS | Deleted global rule |
 | `policy.delete.<tag>` | Server → Agents | Core NATS | Deleted rule for a specific environment |
+| `policy.fetch` | Agents → Server | Core NATS (req/reply) | Agent requests full rule set on startup |
 | `metrics.report` | Agents → Server | Core NATS | Per-IP traffic stats (every 10 s) |
 | `system.metrics` | Agents → Server | Core NATS | System performance metrics (every 30 s) |
 | `log.>` | Agents → Server | **JetStream** | Structured JSON log lines — guaranteed delivery |
@@ -184,7 +185,7 @@ Only traffic to ports registered in `protected_ports` is counted and subject to 
 Every 10 seconds the agent reads the eBPF `request_count` map, computes `req/s = delta / 10` per IP, and finds the winning rule:
 
 1. Collect all rules where `reqPerSec >= rule.Threshold`.
-2. **`block` always takes priority over `ratelimit`.**
+2. **`block` always takes priority over `rate_limit`.**
 3. Among rules with the same action, the **highest threshold wins** (most specific rule).
 4. Returns no match if no rule's threshold is exceeded — existing rate limits are removed.
 
@@ -216,7 +217,9 @@ Every 10 seconds the agent reads the eBPF `request_count` map, computes `req/s =
 
 | Situation | Behavior |
 |-----------|----------|
-| Server unreachable at startup | Retries 4 times (5 s interval), then falls back to disk cache |
+| Server reachable at startup | Fetches rules via NATS `policy.fetch` (req/reply, 5 s timeout) |
+| NATS fetch fails | Falls back to HTTP `/api/rules`, retries 4 times (5 s interval) |
+| HTTP also unavailable | Falls back to disk cache (`/tmp/ebpf-policy-rules.json`) |
 | No disk cache and server down | Starts without rules, keeps retrying |
 | Server comes back online | Fetches fresh rules automatically (health check every 15 s) |
 | NATS connection drops | Reconnects with 5 s interval |
@@ -507,7 +510,7 @@ docker compose up -d
 ### 2. Build policy server
 
 ```bash
-go build -o policy-server ./cmd/server/
+go build -o policy-server ./cmd/policyserver/
 ```
 
 ### 3. Build webserver + agent (compiles eBPF + generates Go bindings + builds binary)
@@ -707,7 +710,7 @@ curl -X POST http://<server-ip>:8080/api/rules \
   -d '{
     "name": "Rate-limit production at >200 req/s",
     "threshold": 200,
-    "action": "ratelimit",
+    "action": "rate_limit",
     "duration": 30,
     "topic": "production"
   }'
@@ -719,7 +722,7 @@ curl -X POST http://<server-ip>:8080/api/rules \
 |-------|------|-------------|
 | `name` | `string` | Descriptive name |
 | `threshold` | `int` | Requests per second trigger threshold |
-| `action` | `string` | `"block"` or `"ratelimit"` |
+| `action` | `string` | `"block"` or `"rate_limit"` |
 | `duration` | `int` | Enforcement duration in seconds |
 | `topic` | `string` | *(optional)* Environment tag — empty = global |
 
@@ -777,13 +780,13 @@ Created automatically on server startup. TimescaleDB hypertables use 1-day chunk
 id          SERIAL PRIMARY KEY
 name        TEXT        NOT NULL
 threshold   INTEGER     NOT NULL
-action      TEXT        NOT NULL    -- "block" or "ratelimit"
+action      TEXT        NOT NULL    -- "block" or "rate_limit"
 duration    INTEGER     NOT NULL    -- seconds
 topic       TEXT        NOT NULL DEFAULT ''   -- empty = global rule
 created_at  TIMESTAMPTZ DEFAULT NOW()
 ```
 
-**`client_stats`** — per-IP traffic metrics (30-day retention)
+**`client_stats`** — per-IP traffic metrics (7-day retention)
 
 ```sql
 time           TIMESTAMPTZ NOT NULL
