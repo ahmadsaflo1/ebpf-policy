@@ -21,6 +21,7 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/api"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/metrics"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/server/policy"
 	"github.com/ahmadsaflo1/ebpf-policy/web"
 )
 
@@ -57,6 +58,10 @@ func main() {
 		log.Printf("log received: %v", logLine)
 	}); err != nil {
 		log.Fatalf("log consumer: %v", err)
+	}
+
+	if err := policy.StartFetchHandler(); err != nil {
+		log.Fatalf("policy fetch handler: %v", err)
 	}
 
 	metrics.StartCollector()

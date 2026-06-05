@@ -7,8 +7,25 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/models"
 )
+
+// FetchRulesViaNATS sends a request to "policy.fetch" over NATS and returns
+// the rules replied by the policy server. Times out after 5 seconds.
+func FetchRulesViaNATS(topic string) ([]models.PolicyRule, error) {
+	req, _ := json.Marshal(map[string]string{"topic": topic})
+	data, err := messaging.Request("policy.fetch", req, 5*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("NATS fetch failed: %w", err)
+	}
+	var rules []models.PolicyRule
+	if err := json.Unmarshal(data, &rules); err != nil {
+		return nil, fmt.Errorf("could not parse rules response: %w", err)
+	}
+	return rules, nil
+}
 
 // FetchRules fetches policy rules from the server's /api/rules endpoint.
 // When topic is non-empty it is passed as a query parameter so the server

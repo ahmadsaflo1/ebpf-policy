@@ -108,3 +108,24 @@ func Subscribe(topic string, handler func(msg []byte)) error {
 	})
 	return err
 }
+
+// Request sends data to topic and waits up to timeout for a reply.
+func Request(topic string, data []byte, timeout time.Duration) ([]byte, error) {
+	msg, err := NC.Request(topic, data, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return msg.Data, nil
+}
+
+// RespondToRequests subscribes to topic and calls handler for each incoming
+// request, publishing the returned bytes as the reply.
+func RespondToRequests(topic string, handler func([]byte) []byte) error {
+	_, err := NC.Subscribe(topic, func(m *nats.Msg) {
+		if m.Reply == "" {
+			return
+		}
+		NC.Publish(m.Reply, handler(m.Data))
+	})
+	return err
+}

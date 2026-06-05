@@ -209,6 +209,18 @@ func watchServer(ctx context.Context, cfg *agentconfig.Config, store *agentconfi
 }
 
 func connectToServer(cfg *agentconfig.Config, store *agentconfig.RuleStore, serverAvailable *bool) {
+	rules, err := agentconfig.FetchRulesViaNATS(cfg.Topic)
+	if err == nil {
+		filtered := filterRules(rules, cfg.Topic)
+		for _, rule := range filtered {
+			store.UpsertSilent(rule)
+		}
+		log.Printf("Fetched %d rules via NATS\n", len(filtered))
+		*serverAvailable = true
+		return
+	}
+	log.Printf("NATS fetch failed: %v — falling back to HTTP\n", err)
+
 	for attempt := 1; attempt <= 4; attempt++ {
 		rules, err := agentconfig.FetchRules(cfg.ServerURL, cfg.Topic)
 		if err == nil {
@@ -216,7 +228,7 @@ func connectToServer(cfg *agentconfig.Config, store *agentconfig.RuleStore, serv
 			for _, rule := range filtered {
 				store.UpsertSilent(rule)
 			}
-			log.Printf("Fetched %d rules from server\n", len(filtered))
+			log.Printf("Fetched %d rules via HTTP\n", len(filtered))
 			*serverAvailable = true
 			return
 		}
