@@ -65,12 +65,7 @@ func main() {
 	}
 
 	metrics.StartCollector()
-	metrics.StartSystemCollector(metrics.ScaleConfig{
-		CPUHigh:         conf.Scale.CPUHigh,
-		CPUNormal:       conf.Scale.CPUNormal,
-		RateLimitHigh:   conf.Scale.RateLimitHigh,
-		RateLimitNormal: conf.Scale.RateLimitNormal,
-	})
+	metrics.StartSystemCollector()
 
 	mux := http.NewServeMux()
 
@@ -95,6 +90,8 @@ func main() {
 
 	mux.HandleFunc("GET /api/system/metrics/aggregated", api.GetSystemMetricsAggregated)
 	mux.HandleFunc("GET /api/system/metrics", api.GetSystemMetrics)
+
+	mux.HandleFunc("GET /api/scaling/decisions", api.GetScalingDecisions)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", conf.Server.Port),

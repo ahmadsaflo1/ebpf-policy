@@ -124,6 +124,34 @@ func createTimescaleTables() error {
 
 	DB.Exec(`CREATE INDEX IF NOT EXISTS idx_system_metrics_agent ON system_metrics (agent_id, time DESC)`)
 
+	// Create scaling_decisions table (adaptive load-management audit log)
+	_, err = DB.Exec(`
+	CREATE TABLE IF NOT EXISTS scaling_decisions (
+		time        TIMESTAMPTZ NOT NULL,
+		agent_id    TEXT        NOT NULL,
+		load_index  FLOAT       NOT NULL,
+		z_cpu       FLOAT       NOT NULL,
+		z_memory    FLOAT       NOT NULL,
+		z_disk      FLOAT       NOT NULL,
+		z_network   FLOAT       NOT NULL,
+		rate_limit  INT         NOT NULL,
+		reason      TEXT        NOT NULL
+	)`)
+	if err != nil {
+		return fmt.Errorf("failed to create scaling_decisions: %w", err)
+	}
+
+	_, err = DB.Exec(`
+	SELECT create_hypertable('scaling_decisions', 'time',
+		if_not_exists => TRUE,
+		chunk_time_interval => INTERVAL '1 day'
+	)`)
+	if err != nil {
+		return fmt.Errorf("failed to create scaling_decisions hypertable: %w", err)
+	}
+
+	DB.Exec(`CREATE INDEX IF NOT EXISTS idx_scaling_decisions_agent ON scaling_decisions (agent_id, time DESC)`)
+
 	// Continuous aggregates — pre-computed rollups so historical queries are instant
 	_, err = DB.Exec(`
 	CREATE MATERIALIZED VIEW IF NOT EXISTS system_metrics_1m
