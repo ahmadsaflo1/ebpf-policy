@@ -243,6 +243,48 @@ func (p *PolicyProgram) RemoveProtectedPort(port uint16) error {
 	return p.objs.ProtectedPorts.Delete(port)
 }
 
+// AddToBypassList adds an IP to the bypass list, causing the XDP program to
+// skip block_list and rate_limit enforcement for it while still counting
+// traffic so the classifier can detect behavioural changes.
+func (p *PolicyProgram) AddToBypassList(ip net.IP) error {
+	key := ipToUint32(ip)
+	ktimeNs, err := getKtimeNs()
+	if err != nil {
+		return fmt.Errorf("failed to get ktime: %w", err)
+	}
+	return p.objs.BypassList.Put(key, ktimeNs)
+}
+
+// RemoveFromBypassList removes an IP from the bypass list, re-enabling full
+// enforcement for it. No-op if the IP was not in the list.
+func (p *PolicyProgram) RemoveFromBypassList(ip net.IP) error {
+	key := ipToUint32(ip)
+	err := p.objs.BypassList.Delete(key)
+	if err != nil && err.Error() == "key does not exist" {
+		return nil
+	}
+	return err
+}
+
+// IsWhitelisted reports whether the IP is currently in the bypass list.
+func (p *PolicyProgram) IsWhitelisted(ip net.IP) bool {
+	key := ipToUint32(ip)
+	var ts uint64
+	return p.objs.BypassList.Lookup(key, &ts) == nil
+}
+
+// GetBypassList returns all IPs currently in the bypass list.
+func (p *PolicyProgram) GetBypassList() ([]string, error) {
+	var ips []string
+	var key uint32
+	var ts uint64
+	iter := p.objs.BypassList.Iterate()
+	for iter.Next(&key, &ts) {
+		ips = append(ips, uint32ToIP(key).String())
+	}
+	return ips, iter.Err()
+}
+
 // GetProtectedPorts returns all ports currently registered for DDoS enforcement.
 func (p *PolicyProgram) GetProtectedPorts() ([]uint16, error) {
 	var ports []uint16

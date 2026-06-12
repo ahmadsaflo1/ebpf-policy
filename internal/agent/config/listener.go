@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
@@ -15,11 +16,16 @@ type RuleHandler func(rule models.PolicyRule)
 // The argument is the ID of the deleted rule.
 type DeleteHandler func(ruleID int)
 
+// WhitelistHandler is called whenever the autonomous classifier adds or removes
+// an IP from the eBPF bypass list. action is "add" or "remove".
+type WhitelistHandler func(update models.WhitelistUpdate)
+
 // Listener subscribes to NATS topics and dispatches incoming rule changes
 // to the provided RuleHandler and DeleteHandler callbacks.
 type Listener struct {
-	onUpdate RuleHandler
-	onDelete DeleteHandler
+	onUpdate    RuleHandler
+	onDelete    DeleteHandler
+	onWhitelist WhitelistHandler
 }
 
 // NewListener constructs a Listener that will call onUpdate for create/update
@@ -29,6 +35,12 @@ func NewListener(onUpdate RuleHandler, onDelete DeleteHandler) *Listener {
 		onUpdate: onUpdate,
 		onDelete: onDelete,
 	}
+}
+
+// SetWhitelistHandler registers the callback that handles whitelist.update
+// messages from the classifier. Must be called before Start.
+func (l *Listener) SetWhitelistHandler(h WhitelistHandler) {
+	l.onWhitelist = h
 }
 
 // Start subscribes to NATS policy topics and begins dispatching events.
@@ -73,6 +85,22 @@ func (l *Listener) Start(agentID, topic string) error {
 		})
 		if err != nil {
 			return err
+		}
+	}
+
+	// Subscribe to classifier whitelist updates so agents apply them directly
+	// in their eBPF bypass_list map without an agent restart.
+	if l.onWhitelist != nil {
+		err := messaging.Subscribe("whitelist.update", func(data []byte) {
+			var update models.WhitelistUpdate
+			if err := json.Unmarshal(data, &update); err != nil {
+				log.Printf("Failed to unmarshal whitelist.update: %v\n", err)
+				return
+			}
+			l.onWhitelist(update)
+		})
+		if err != nil {
+			return fmt.Errorf("whitelist.update subscribe: %w", err)
 		}
 	}
 

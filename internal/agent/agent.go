@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -49,11 +50,35 @@ func Start(ctx context.Context, conf *config.Settings) error {
 		func(rule models.PolicyRule) { store.Upsert(rule) },
 		func(ruleID int) { store.Delete(ruleID) },
 	)
+	listener.SetWhitelistHandler(func(update models.WhitelistUpdate) {
+		ip := net.ParseIP(update.IP)
+		if ip == nil {
+			log.Printf("Whitelist update: invalid IP %q", update.IP)
+			return
+		}
+		switch update.Action {
+		case "add":
+			if err := program.AddToBypassList(ip); err != nil {
+				log.Printf("Whitelist: failed to add %s to bypass list: %v", update.IP, err)
+			} else {
+				log.Printf("Whitelist: added %s (trusted) — %s", update.IP, update.Reason)
+			}
+		case "remove":
+			if err := program.RemoveFromBypassList(ip); err != nil {
+				log.Printf("Whitelist: failed to remove %s from bypass list: %v", update.IP, err)
+			} else {
+				log.Printf("Whitelist: removed %s — %s", update.IP, update.Reason)
+			}
+		}
+	})
+
 	if err := listener.Start(cfg.AgentID, cfg.Topic); err != nil {
 		program.Close()
 		messaging.Close()
 		return fmt.Errorf("failed to start policy listener: %w", err)
 	}
+
+	fetchWhitelist(program)
 
 	rep := reporter.New(cfg.AgentID, &serverAvailable)
 	rep.Start()
@@ -270,4 +295,30 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// fetchWhitelist requests the current trusted-IP list from the policy server
+// via NATS (whitelist.fetch) and seeds the eBPF bypass_list map so whitelisted
+// IPs are enforced immediately without waiting for a whitelist.update message.
+func fetchWhitelist(program *ebpfloader.PolicyProgram) {
+	data, err := messaging.Request("whitelist.fetch", []byte("{}"), 5*time.Second)
+	if err != nil {
+		log.Printf("Whitelist fetch failed (will apply updates as they arrive): %v", err)
+		return
+	}
+	var resp models.WhitelistFetchResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		log.Printf("Whitelist fetch: bad response: %v", err)
+		return
+	}
+	for _, ipStr := range resp.IPs {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		if err := program.AddToBypassList(ip); err != nil {
+			log.Printf("Whitelist fetch: could not add %s: %v", ipStr, err)
+		}
+	}
+	log.Printf("Whitelist fetch: seeded %d trusted IPs into bypass list", len(resp.IPs))
 }

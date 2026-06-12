@@ -19,6 +19,7 @@ import (
 	"github.com/ahmadsaflo1/ebpf-policy/internal/config"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/messaging"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/api"
+	"github.com/ahmadsaflo1/ebpf-policy/internal/server/classifier"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/db"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/metrics"
 	"github.com/ahmadsaflo1/ebpf-policy/internal/server/policy"
@@ -66,6 +67,7 @@ func main() {
 
 	metrics.StartCollector()
 	metrics.StartSystemCollector()
+	classifier.Start()
 
 	mux := http.NewServeMux()
 
@@ -92,6 +94,10 @@ func main() {
 	mux.HandleFunc("GET /api/system/metrics", api.GetSystemMetrics)
 
 	mux.HandleFunc("GET /api/scaling/decisions", api.GetScalingDecisions)
+
+	mux.HandleFunc("GET /api/classification", api.GetClassifications)
+	mux.HandleFunc("GET /api/classification/ip", api.GetClassification)
+	mux.HandleFunc("GET /api/classification/log", api.GetClassificationLog)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", conf.Server.Port),

@@ -9,21 +9,29 @@
  *   3. The destination port is extracted from the TCP or UDP header and looked
  *      up in protected_ports. If the port is not listed, the packet is passed
  *      through without any tracking or enforcement.
- *   4. Drops the packet immediately if src_ip is in block_list and the entry
+ *   4. If src_ip is in bypass_list (autonomously whitelisted by the classifier),
+ *      traffic is counted for ongoing behavioral monitoring but skips all
+ *      enforcement (block_list and rate_limit checks).
+ *   5. Drops the packet immediately if src_ip is in block_list and the entry
  *      has not yet expired (expiry is a ktime_get_ns timestamp).
- *   5. If the IP has an entry in rate_limit_config_map, applies a per-IP
+ *   6. If the IP has an entry in rate_limit_config_map, applies a per-IP
  *      token-bucket rate limiter using the configured rate (tokens/s) with
  *      burst = 2× rate. Drops the packet when the bucket is empty. If no
  *      entry exists the packet is passed without any rate limiting.
- *   6. Increments the cumulative counter in request_count so the Go agent can
+ *   7. Increments the cumulative counter in request_count so the Go agent can
  *      calculate req/s and decide whether to extend/add a block.
- *   7. Records per-packet processing latency in latency_map.
+ *   8. Records per-packet processing latency in latency_map.
  *
  * Protected ports are managed at runtime via the Go agent helpers
  * AddProtectedPort and RemoveProtectedPort in internal/agent/ebpf/loader.go.
  * By default ports 80, 443, and 8080 are registered on startup.
  *
- * All maps except protected_ports are LRU hash maps capped at 10 000 entries.
+ * The bypass_list is managed by the autonomous IP classifier running on the
+ * policy server. It is updated in real time via NATS whitelist.update messages.
+ *
+ * All maps except protected_ports and bypass_list are LRU hash maps capped at
+ * 10 000 entries. bypass_list uses a plain hash map (no LRU eviction) so that
+ * trusted IPs cannot be silently evicted under high traffic.
  */
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
@@ -101,6 +109,18 @@ struct {
     __type(key,   __u16);
     __type(value, __u8);
 } protected_ports SEC(".maps");
+
+// Map 7: autonomous bypass list — IPs classified as TRUSTED by the Z-score
+// classifier skip block_list and rate_limit enforcement entirely.
+// Uses a plain hash map (not LRU) so trusted IPs cannot be evicted under load.
+// Value = ktime_ns timestamp when the IP was added (for auditing).
+// Managed by the Go agent via AddToBypassList / RemoveFromBypassList.
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 1000);
+    __type(key,   __u32);
+    __type(value, __u64);
+} bypass_list SEC(".maps");
 
 // Token bucket — returns XDP_PASS or XDP_DROP.
 // Returns XDP_PASS immediately if no rate limit is configured for this IP.
@@ -221,6 +241,21 @@ int policy_filter(struct xdp_md *ctx)
     __u32 src_ip = bpf_ntohl(ip->saddr);
     __u64 now    = bpf_ktime_get_ns();
     int   action = XDP_PASS;
+
+    // Step 0: bypass list check — autonomously whitelisted IPs skip all
+    // enforcement but are still counted so the classifier can detect if their
+    // behaviour changes and remove them from the list.
+    if (bpf_map_lookup_elem(&bypass_list, &src_ip)) {
+        struct ip_stats *bstats = bpf_map_lookup_elem(&request_count, &src_ip);
+        if (bstats) {
+            __sync_fetch_and_add(&bstats->count, 1);
+            bstats->last_seen = now;
+        } else {
+            struct ip_stats new_stats = { .count = 1, .last_seen = now };
+            bpf_map_update_elem(&request_count, &src_ip, &new_stats, BPF_ANY);
+        }
+        goto update_stats;
+    }
 
     // Step 1: check if src IP is currently blocked
     __u64 *blocked_until = bpf_map_lookup_elem(&block_list, &src_ip);

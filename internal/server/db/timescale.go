@@ -224,8 +224,71 @@ func createTimescaleTables() error {
 		log.Printf("Warning: Could not add retention policy for system_metrics: %v", err)
 	}
 
+	// ip_classifications — current autonomous classification state per IP.
+	// This is a regular (non-hypertable) table keyed by IP; it is upserted on
+	// every classifier cycle so it always reflects the latest decision.
+	_, err = DB.Exec(`
+	CREATE TABLE IF NOT EXISTS ip_classifications (
+		ip              INET        PRIMARY KEY,
+		classification  TEXT        NOT NULL DEFAULT 'unknown',
+		z_score         FLOAT       NOT NULL DEFAULT 0,
+		sample_count    INT         NOT NULL DEFAULT 0,
+		mean_rate       FLOAT       NOT NULL DEFAULT 0,
+		stddev_rate     FLOAT       NOT NULL DEFAULT 0,
+		current_rate    FLOAT       NOT NULL DEFAULT 0,
+		mean_latency    FLOAT       NOT NULL DEFAULT 0,
+		stddev_latency  FLOAT       NOT NULL DEFAULT 0,
+		whitelisted     BOOL        NOT NULL DEFAULT FALSE,
+		last_updated    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		reason          TEXT        NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		return fmt.Errorf("failed to create ip_classifications: %w", err)
+	}
+
+	DB.Exec(`CREATE INDEX IF NOT EXISTS idx_ip_classifications_class
+		ON ip_classifications (classification, last_updated DESC)`)
+
+	// ip_classification_log — append-only audit trail of every classification
+	// decision. Made a TimescaleDB hypertable so old log entries are compressed
+	// and pruned automatically.
+	_, err = DB.Exec(`
+	CREATE TABLE IF NOT EXISTS ip_classification_log (
+		time            TIMESTAMPTZ NOT NULL,
+		ip              INET        NOT NULL,
+		classification  TEXT        NOT NULL,
+		z_score         FLOAT       NOT NULL DEFAULT 0,
+		sample_count    INT         NOT NULL DEFAULT 0,
+		mean_rate       FLOAT       NOT NULL DEFAULT 0,
+		current_rate    FLOAT       NOT NULL DEFAULT 0,
+		action          TEXT        NOT NULL DEFAULT 'no_change',
+		rate_limit      INT         NOT NULL DEFAULT 0,
+		reason          TEXT        NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		return fmt.Errorf("failed to create ip_classification_log: %w", err)
+	}
+
+	_, err = DB.Exec(`
+	SELECT create_hypertable('ip_classification_log', 'time',
+		if_not_exists => TRUE,
+		chunk_time_interval => INTERVAL '1 day'
+	)`)
+	if err != nil {
+		return fmt.Errorf("failed to create ip_classification_log hypertable: %w", err)
+	}
+
+	DB.Exec(`CREATE INDEX IF NOT EXISTS idx_ip_classification_log_ip
+		ON ip_classification_log (ip, time DESC)`)
+
+	_, err = DB.Exec(`
+	SELECT add_retention_policy('ip_classification_log', INTERVAL '30 days', if_not_exists => TRUE)`)
+	if err != nil {
+		log.Printf("Warning: Could not add retention policy for ip_classification_log: %v", err)
+	}
+
 	log.Println("✅ TimescaleDB tables and hypertables created")
-	log.Println("✅ Retention policies: client_stats=7d, system_metrics=7d")
+	log.Println("✅ Retention policies: client_stats=7d, system_metrics=7d, ip_classification_log=30d")
 
 	return nil
 }
