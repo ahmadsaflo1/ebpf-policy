@@ -50,16 +50,30 @@ func Load(iface string) (*PolicyProgram, error) {
         return nil, fmt.Errorf("Failed to get interface by name %s: %w", iface, err)
     }
 
+    // Prefer native (driver) mode: the NIC driver calls the XDP program before
+    // the kernel network stack, enabling line-rate processing at 1 Gbps+.
+    // Fall back to generic mode only when the driver lacks native XDP support,
+    // logging a warning because generic mode is significantly slower.
+    mode := "native"
     p.xdp, err = link.AttachXDP(link.XDPOptions{
         Program:   p.objs.PolicyFilter,
         Interface: ifaceObj.Index,
-        Flags:     link.XDPGenericMode, // generic mode for broader driver compatibility
+        Flags:     link.XDPDriverMode,
     })
     if err != nil {
-        return nil, fmt.Errorf("Failed to attach XDP program: %w", err)
+        mode = "generic"
+        log.Printf("WARNING: native XDP not supported on %s (%v) — falling back to generic mode; line-rate performance at 1 Gbps is not guaranteed", iface, err)
+        p.xdp, err = link.AttachXDP(link.XDPOptions{
+            Program:   p.objs.PolicyFilter,
+            Interface: ifaceObj.Index,
+            Flags:     link.XDPGenericMode,
+        })
+        if err != nil {
+            return nil, fmt.Errorf("Failed to attach XDP program: %w", err)
+        }
     }
 
-    log.Printf("Successfully loaded eBPF program on interface %s (index %d)\n", iface, ifaceObj.Index)
+    log.Printf("Successfully loaded eBPF program on interface %s (index %d, mode %s)\n", iface, ifaceObj.Index, mode)
     return p, nil
 }
 
