@@ -12,13 +12,15 @@ import (
 // Reporter sends system metrics to the server via NATS
 type Reporter struct {
 	agentID         string
+	topic           string
 	serverAvailable *bool
 }
 
 // NewReporter creates a new system metrics reporter
-func NewReporter(agentID string, serverAvailable *bool) *Reporter {
+func NewReporter(agentID, topic string, serverAvailable *bool) *Reporter {
 	return &Reporter{
 		agentID:         agentID,
+		topic:           topic,
 		serverAvailable: serverAvailable,
 	}
 }
@@ -37,6 +39,7 @@ func (r *Reporter) Report(metrics models.SystemMetrics) {
 
 	report := models.SystemMetricsReport{
 		AgentID:   r.agentID,
+		Topic:     r.topic,
 		Timestamp: time.Now(),
 		Metrics:   metrics,
 	}

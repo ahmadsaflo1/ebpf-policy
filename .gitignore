@@ -1,6 +1,6 @@
 # Compiled binaries
-/policy-server
-/policy-agent
+/policyserver
+/policyagent
 /webserver
 /nats
 

@@ -32,18 +32,18 @@ func NewListener(onUpdate RuleHandler, onDelete DeleteHandler) *Listener {
 }
 
 // Start subscribes to NATS policy topics and begins dispatching events.
-// When topic is empty the agent is global and subscribes to all variants
-// via wildcards (policy.update and policy.update.>). When topic is set,
-// it subscribes to the global subject plus the topic-scoped one.
-func (l *Listener) Start(topic string) error {
+// It always subscribes to the global subject and a per-agent subject
+// (policy.update.<agentID>) so that targeted rules reach only this agent.
+// When topic is set, it also subscribes to the topic-scoped subject.
+func (l *Listener) Start(agentID, topic string) error {
 	var updateTopics, deleteTopics []string
 
 	if topic == "" {
 		updateTopics = []string{"policy.update", "policy.update.>"}
 		deleteTopics = []string{"policy.delete", "policy.delete.>"}
 	} else {
-		updateTopics = []string{"policy.update", "policy.update." + topic}
-		deleteTopics = []string{"policy.delete", "policy.delete." + topic}
+		updateTopics = []string{"policy.update", "policy.update." + topic, "policy.update." + agentID}
+		deleteTopics = []string{"policy.delete", "policy.delete." + topic, "policy.delete." + agentID}
 	}
 
 	for _, t := range updateTopics {

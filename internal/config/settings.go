@@ -35,4 +35,11 @@ type Settings struct {
 		ServerURL string `default:"http://localhost:8080" env:"SERVER_URL"`
 		Topic     string `default:"" env:"TOPIC"`
 	}
+
+	Scale struct {
+		CPUHigh         int `default:"85"  env:"SCALE_CPU_HIGH"`
+		CPUNormal       int `default:"50"  env:"SCALE_CPU_NORMAL"`
+		RateLimitHigh   int `default:"200" env:"SCALE_RATE_LIMIT_HIGH"`
+		RateLimitNormal int `default:"500" env:"SCALE_RATE_LIMIT_NORMAL"`
+	}
 }

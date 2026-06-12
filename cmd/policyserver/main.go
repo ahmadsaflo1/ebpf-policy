@@ -65,7 +65,12 @@ func main() {
 	}
 
 	metrics.StartCollector()
-	metrics.StartSystemCollector()
+	metrics.StartSystemCollector(metrics.ScaleConfig{
+		CPUHigh:         conf.Scale.CPUHigh,
+		CPUNormal:       conf.Scale.CPUNormal,
+		RateLimitHigh:   conf.Scale.RateLimitHigh,
+		RateLimitNormal: conf.Scale.RateLimitNormal,
+	})
 
 	mux := http.NewServeMux()
 

@@ -19,6 +19,7 @@ type SystemMetrics struct {
 // SystemMetricsReport is published by agents to the server
 type SystemMetricsReport struct {
 	AgentID   string        `json:"agent_id"`
+	Topic     string        `json:"topic"`
 	Timestamp time.Time     `json:"timestamp"`
 	Metrics   SystemMetrics `json:"metrics"`
 }

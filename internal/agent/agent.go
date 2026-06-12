@@ -49,7 +49,7 @@ func Start(ctx context.Context, conf *config.Settings) error {
 		func(rule models.PolicyRule) { store.Upsert(rule) },
 		func(ruleID int) { store.Delete(ruleID) },
 	)
-	if err := listener.Start(cfg.Topic); err != nil {
+	if err := listener.Start(cfg.AgentID, cfg.Topic); err != nil {
 		program.Close()
 		messaging.Close()
 		return fmt.Errorf("failed to start policy listener: %w", err)
@@ -58,7 +58,7 @@ func Start(ctx context.Context, conf *config.Settings) error {
 	rep := reporter.New(cfg.AgentID, &serverAvailable)
 	rep.Start()
 
-	sysReporter := system.NewReporter(cfg.AgentID, &serverAvailable)
+	sysReporter := system.NewReporter(cfg.AgentID, cfg.Topic, &serverAvailable)
 	sysMonitor := system.New(cfg.AgentID, 30*time.Second, func(metrics models.SystemMetrics) {
 		sysReporter.Report(metrics)
 	})
