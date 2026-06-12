@@ -7,7 +7,7 @@
   "graphTooltip": 1,
   "id": null,
   "links": [],
-  "liveNow": true,
+  "liveNow": false,
   "panels": [
     {
       "collapsed": false,
@@ -348,7 +348,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('30 seconds', time) AS time,\n  agent_id,\n  AVG(cpu_percent) / 1000.0 as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('30 seconds', time), agent_id\nORDER BY 1,2",
+          "rawSql": "SELECT\n  time_bucket('$__interval', time) AS time,\n  agent_id,\n  AVG(cpu_percent) / 1000.0 as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('$__interval', time), agent_id\nORDER BY 1,2",
           "refId": "A"
         }
       ],
@@ -435,7 +435,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('30 seconds', time) AS time,\n  agent_id,\n  AVG(memory_percent) / 1000.0 as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('30 seconds', time), agent_id\nORDER BY 1,2",
+          "rawSql": "SELECT\n  time_bucket('$__interval', time) AS time,\n  agent_id,\n  AVG(memory_percent) / 1000.0 as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('$__interval', time), agent_id\nORDER BY 1,2",
           "refId": "A"
         }
       ],
@@ -522,7 +522,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('30 seconds', time) AS time,\n  agent_id || ' - Sent' as metric,\n  AVG(net_bytes_sent) as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('30 seconds', time), agent_id\nUNION ALL\nSELECT\n  time_bucket('30 seconds', time) AS time,\n  agent_id || ' - Recv' as metric,\n  AVG(net_bytes_recv) as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('30 seconds', time), agent_id\nORDER BY 1,2",
+          "rawSql": "SELECT\n  time_bucket('$__interval', time) AS time,\n  agent_id || ' - Sent' as metric,\n  AVG(net_bytes_sent) as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('$__interval', time), agent_id\nUNION ALL\nSELECT\n  time_bucket('$__interval', time) AS time,\n  agent_id || ' - Recv' as metric,\n  AVG(net_bytes_recv) as value\nFROM system_metrics\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('$__interval', time), agent_id\nORDER BY 1,2",
           "refId": "A"
         }
       ],
@@ -622,7 +622,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('1 minute', time) AS time,\n  ip::text,\n  AVG(req_per_sec) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('1 minute', time), ip\nORDER BY 1,2",
+          "rawSql": "SELECT\n  time_bucket('$__interval', time) AS time,\n  ip::text,\n  AVG(req_per_sec) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('$__interval', time), ip\nORDER BY 1,2",
           "refId": "A"
         }
       ],
@@ -773,7 +773,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('1 minute', time) AS time,\n  'Blocked' as metric,\n  SUM(blocked) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('1 minute', time)\nUNION ALL\nSELECT\n  time_bucket('1 minute', time) AS time,\n  'Rate Limited' as metric,\n  SUM(rate_limited) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('1 minute', time)\nUNION ALL\nSELECT\n  time_bucket('1 minute', time) AS time,\n  'Passed' as metric,\n  SUM(CASE WHEN blocked = 0 AND rate_limited = 0 THEN 1 ELSE 0 END) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('1 minute', time)\nORDER BY 1,2",
+          "rawSql": "SELECT\n  time_bucket('$__interval', time) AS time,\n  'Blocked' as metric,\n  SUM(blocked) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('$__interval', time)\nUNION ALL\nSELECT\n  time_bucket('$__interval', time) AS time,\n  'Rate Limited' as metric,\n  SUM(rate_limited) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('$__interval', time)\nUNION ALL\nSELECT\n  time_bucket('$__interval', time) AS time,\n  'Passed' as metric,\n  SUM(CASE WHEN blocked = 0 AND rate_limited = 0 THEN 1 ELSE 0 END) as value\nFROM client_stats\nWHERE $__timeFilter(time)\nGROUP BY time_bucket('$__interval', time)\nORDER BY 1,2",
           "refId": "A"
         }
       ],
@@ -1134,7 +1134,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('1 minute', time) AS time,\n  ip::text || ' - Avg' as metric,\n  AVG(avg_latency_us) as value\nFROM client_stats\nWHERE $__timeFilter(time) AND avg_latency_us > 0\nGROUP BY time_bucket('1 minute', time), ip\nUNION ALL\nSELECT\n  time_bucket('1 minute', time) AS time,\n  ip::text || ' - Max' as metric,\n  MAX(max_latency_us) as value\nFROM client_stats\nWHERE $__timeFilter(time) AND max_latency_us > 0\nGROUP BY time_bucket('1 minute', time), ip\nUNION ALL\nSELECT\n  time_bucket('1 minute', time) AS time,\n  ip::text || ' - Min' as metric,\n  MIN(min_latency_us) as value\nFROM client_stats\nWHERE $__timeFilter(time) AND min_latency_us > 0\nGROUP BY time_bucket('1 minute', time), ip\nORDER BY 1,2",
+          "rawSql": "SELECT\n  time_bucket('$__interval', time) AS time,\n  ip::text || ' - Avg' as metric,\n  AVG(avg_latency_us) as value\nFROM client_stats\nWHERE $__timeFilter(time) AND avg_latency_us > 0\nGROUP BY time_bucket('$__interval', time), ip\nUNION ALL\nSELECT\n  time_bucket('$__interval', time) AS time,\n  ip::text || ' - Max' as metric,\n  MAX(max_latency_us) as value\nFROM client_stats\nWHERE $__timeFilter(time) AND max_latency_us > 0\nGROUP BY time_bucket('$__interval', time), ip\nUNION ALL\nSELECT\n  time_bucket('$__interval', time) AS time,\n  ip::text || ' - Min' as metric,\n  MIN(min_latency_us) as value\nFROM client_stats\nWHERE $__timeFilter(time) AND min_latency_us > 0\nGROUP BY time_bucket('$__interval', time), ip\nORDER BY 1,2",
           "refId": "A"
         }
       ],
@@ -1604,7 +1604,7 @@
       "type": "table"
     }
   ],
-  "refresh": "10s",
+  "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
   "tags": ["ebpf", "policy", "security", "complete"],

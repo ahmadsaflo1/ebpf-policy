@@ -124,6 +124,63 @@ func createTimescaleTables() error {
 
 	DB.Exec(`CREATE INDEX IF NOT EXISTS idx_system_metrics_agent ON system_metrics (agent_id, time DESC)`)
 
+	// Continuous aggregates — pre-computed rollups so historical queries are instant
+	_, err = DB.Exec(`
+	CREATE MATERIALIZED VIEW IF NOT EXISTS system_metrics_1m
+	WITH (timescaledb.continuous) AS
+	SELECT
+		time_bucket('1 minute', time) AS bucket,
+		agent_id,
+		AVG(cpu_percent)         AS avg_cpu,
+		AVG(memory_percent)      AS avg_memory,
+		AVG(disk_percent)        AS avg_disk,
+		AVG(net_bytes_sent)      AS avg_net_sent,
+		AVG(net_bytes_recv)      AS avg_net_recv
+	FROM system_metrics
+	GROUP BY bucket, agent_id
+	WITH NO DATA`)
+	if err != nil {
+		log.Printf("Warning: Could not create system_metrics_1m aggregate: %v", err)
+	}
+
+	_, err = DB.Exec(`
+	CREATE MATERIALIZED VIEW IF NOT EXISTS client_stats_1m
+	WITH (timescaledb.continuous) AS
+	SELECT
+		time_bucket('1 minute', time) AS bucket,
+		agent_id,
+		ip,
+		AVG(req_per_sec)       AS avg_req_per_sec,
+		SUM(blocked)           AS sum_blocked,
+		SUM(rate_limited)      AS sum_rate_limited,
+		SUM(passed)            AS sum_passed,
+		AVG(avg_latency_us)    AS avg_latency_us,
+		MIN(min_latency_us)    AS min_latency_us,
+		MAX(max_latency_us)    AS max_latency_us
+	FROM client_stats
+	GROUP BY bucket, agent_id, ip
+	WITH NO DATA`)
+	if err != nil {
+		log.Printf("Warning: Could not create client_stats_1m aggregate: %v", err)
+	}
+
+	// Refresh policies — keep aggregates up to date automatically
+	DB.Exec(`
+	SELECT add_continuous_aggregate_policy('system_metrics_1m',
+		start_offset => INTERVAL '1 hour',
+		end_offset   => INTERVAL '10 seconds',
+		schedule_interval => INTERVAL '30 seconds',
+		if_not_exists => TRUE)`)
+
+	DB.Exec(`
+	SELECT add_continuous_aggregate_policy('client_stats_1m',
+		start_offset => INTERVAL '1 hour',
+		end_offset   => INTERVAL '10 seconds',
+		schedule_interval => INTERVAL '30 seconds',
+		if_not_exists => TRUE)`)
+
+	log.Println("✅ Continuous aggregates created: system_metrics_1m, client_stats_1m")
+
 	// Add retention policies (auto-delete old data)
 	// Keep client_stats for 7 days
 	_, err = DB.Exec(`
