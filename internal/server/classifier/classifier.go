@@ -82,16 +82,17 @@ type ipBaseline struct {
 // Start launches the background classification loop. It returns immediately;
 // use ctx cancellation to stop it.
 func Start() {
+	if err := messaging.RespondToRequests("whitelist.fetch", handleFetchRequest); err != nil {
+		log.Printf("Classifier: could not register whitelist.fetch handler: %v", err)
+	}
+
 	go func() {
-		// Wait one interval before the first run so the DB has some data.
+		// Wait one interval before the first classification cycle so the DB
+		// has enough data to compute meaningful baselines.
 		time.Sleep(classifierInterval)
 
 		ticker := time.NewTicker(classifierInterval)
 		defer ticker.Stop()
-
-		if err := messaging.RespondToRequests("whitelist.fetch", handleFetchRequest); err != nil {
-			log.Printf("Classifier: could not register whitelist.fetch handler: %v", err)
-		}
 
 		for range ticker.C {
 			runCycle()
