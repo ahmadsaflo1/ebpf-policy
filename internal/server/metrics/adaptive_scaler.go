@@ -72,11 +72,23 @@ func indexToLevel(idx float64) int {
 	}
 }
 
-// zScore computes (value − mean) / stddev. Returns 0 when stddev is zero to
-// avoid division by zero on resources with no variance.
+// minCVFloor is the minimum coefficient of variation enforced on stddev before
+// computing z-scores. When a resource is very stable (small stddev relative to
+// mean), even a tiny absolute change produces an enormous z-score and a
+// spurious load_index of 100. A floor of 10 % of mean prevents this: a CPU
+// stable at 15 % needs to move by at least 1.5 percentage points before the
+// z-score rises above 1.0.
+const minCVFloor = 0.10
+
+// zScore computes (value − mean) / stddev with a minimum-stddev floor to
+// prevent hypersensitivity on very stable resources. Returns 0 when mean is 0.
 func zScore(value, mean, stddev float64) float64 {
-	if stddev == 0 {
+	if mean == 0 {
 		return 0
+	}
+	floor := mean * minCVFloor
+	if stddev < floor {
+		stddev = floor
 	}
 	return (value - mean) / stddev
 }

@@ -416,10 +416,20 @@ func publishBlockRule(ip, reason string) {
 	}
 }
 
-// zScore computes (value − mean) / stddev. Returns 0 when stddev is 0.
+// minCVFloor mirrors the adaptive scaler's floor: stddev is never allowed to
+// fall below 10 % of mean so that very stable IPs don't get huge z-scores from
+// tiny absolute fluctuations in request rate.
+const minCVFloor = 0.10
+
+// zScore computes |value − mean| / stddev with a stddev floor of 10 % of mean.
+// Returns 0 when mean is 0.
 func zScore(value, mean, stddev float64) float64 {
-	if stddev == 0 {
+	if mean == 0 {
 		return 0
+	}
+	floor := mean * minCVFloor
+	if stddev < floor {
+		stddev = floor
 	}
 	return math.Abs(value-mean) / stddev
 }
