@@ -19,6 +19,8 @@ type AgentState struct {
 	LoadIndex          float64
 	ActiveRuleLevel    int
 	StableCount        int
+	EscalationCount    int // consecutive reports requiring escalation; must reach 3 before acting
+	DeviationCount     int // consecutive level-0 reports with positive load index (baseline shift detection)
 	LastPublished      time.Time
 	LastPublishedIndex float64
 	Baseline           map[string]BaselineStat
@@ -126,9 +128,12 @@ func getOrCreateState(agentID string) *AgentState {
 	return s
 }
 
-// fetchBaseline queries a 24 h rolling window of system_metrics for agentID and
-// returns per-resource mean/stddev. Returns nil on query error.
-func fetchBaseline(agentID string) map[string]BaselineStat {
+// fetchBaseline queries a rolling window of system_metrics for agentID and
+// returns per-resource mean/stddev. window controls how far back to look
+// (e.g. 24*time.Hour for the normal window, 2*time.Hour for fast re-anchoring).
+// Returns nil on query error.
+func fetchBaseline(agentID string, window time.Duration) map[string]BaselineStat {
+	hours := int(window.Hours())
 	row := db.DB.QueryRow(`
 		SELECT
 			COALESCE(AVG(cpu_percent),                        0) AS avg_cpu,
@@ -141,8 +146,8 @@ func fetchBaseline(agentID string) map[string]BaselineStat {
 			COALESCE(STDDEV(net_bytes_sent + net_bytes_recv), 0) AS std_net
 		FROM system_metrics
 		WHERE agent_id = $1
-		  AND time > NOW() - INTERVAL '24 hours'`,
-		agentID,
+		  AND time > NOW() - make_interval(hours => $2)`,
+		agentID, hours,
 	)
 	var (
 		avgCpu, stdCpu   float64
@@ -169,7 +174,7 @@ func ProcessAdaptive(report models.SystemMetricsReport) {
 	agentID := report.AgentID
 	state := getOrCreateState(agentID)
 
-	baseline := fetchBaseline(agentID)
+	baseline := fetchBaseline(agentID, 24*time.Hour)
 	if baseline == nil {
 		return
 	}
@@ -183,6 +188,33 @@ func ProcessAdaptive(report models.SystemMetricsReport) {
 	idx := computeLoadIndex(zCpu, zMem, zDisk, zNet)
 	targetLevel := indexToLevel(idx)
 
+	// Change 2: if at level 0 and load index is persistently positive for >10
+	// consecutive reports without crossing the escalation threshold, treat it as a
+	// permanent baseline shift (e.g. VS Code opened, RAM settled at a new normal)
+	// and re-anchor the baseline to the last 2 hours instead of 24 hours.
+	if state.ActiveRuleLevel == 0 && targetLevel == 0 {
+		if idx > 0 {
+			state.DeviationCount++
+		} else {
+			state.DeviationCount = 0
+		}
+		if state.DeviationCount > 10 {
+			if sb := fetchBaseline(agentID, 2*time.Hour); sb != nil {
+				baseline = sb
+				zCpu = zScore(float64(m.CPUPercent), baseline["cpu"].Mean, baseline["cpu"].StdDev)
+				zMem = zScore(float64(m.MemoryPercent), baseline["memory"].Mean, baseline["memory"].StdDev)
+				zDisk = zScore(float64(m.DiskPercent), baseline["disk"].Mean, baseline["disk"].StdDev)
+				zNet = zScore(float64(m.NetBytesSent+m.NetBytesRecv), baseline["network"].Mean, baseline["network"].StdDev)
+				idx = computeLoadIndex(zCpu, zMem, zDisk, zNet)
+				targetLevel = indexToLevel(idx)
+				state.DeviationCount = 0
+				log.Printf("Adaptive: agent=%s permanent baseline shift detected; re-anchored to 2h window (idx=%.1f)", agentID, idx)
+			}
+		}
+	} else {
+		state.DeviationCount = 0
+	}
+
 	state.Baseline = baseline
 	state.LoadIndex = idx
 
@@ -192,14 +224,23 @@ func ProcessAdaptive(report models.SystemMetricsReport) {
 
 	switch {
 	case targetLevel > state.ActiveRuleLevel:
-		// Immediate escalation to the required level.
-		candidateLevel = targetLevel
-		state.StableCount = 0
-		reason = fmt.Sprintf("load index %.1f exceeded level-%d threshold; escalating to level %d (%d req/s)",
-			idx, state.ActiveRuleLevel, candidateLevel, levelRateLimit[candidateLevel])
+		// Change 1: require 3 consecutive reports above threshold before escalating.
+		state.EscalationCount++
+		if state.EscalationCount < 3 {
+			log.Printf("Adaptive: agent=%s idx=%.1f confirmed %d/3 reports above threshold; awaiting escalation to level %d",
+				agentID, idx, state.EscalationCount, targetLevel)
+			// candidateLevel unchanged → early-return below fires; no decision logged.
+		} else {
+			state.EscalationCount = 0
+			candidateLevel = targetLevel
+			state.StableCount = 0
+			reason = fmt.Sprintf("load index %.1f exceeded level-%d threshold; escalating to level %d (%d req/s)",
+				idx, state.ActiveRuleLevel, candidateLevel, levelRateLimit[candidateLevel])
+		}
 
 	case targetLevel < state.ActiveRuleLevel:
 		// Gradual recovery: require 2 consecutive stable reports before stepping down.
+		state.EscalationCount = 0
 		if state.StableCount < 2 {
 			state.StableCount++
 		}
@@ -214,7 +255,8 @@ func ProcessAdaptive(report models.SystemMetricsReport) {
 		}
 
 	default:
-		// Same level; reset the recovery counter.
+		// Same level; reset both counters.
+		state.EscalationCount = 0
 		state.StableCount = 0
 	}
 
