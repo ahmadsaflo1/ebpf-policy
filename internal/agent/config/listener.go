@@ -88,19 +88,21 @@ func (l *Listener) Start(agentID, topic string) error {
 		}
 	}
 
-	// Subscribe to classifier whitelist updates so agents apply them directly
-	// in their eBPF bypass_list map without an agent restart.
+	// Subscribe to per-agent whitelist updates from the classifier.
+	// The topic is whitelist.update.<agentID> so each agent only receives
+	// updates for IPs it has actually seen — not a global broadcast.
 	if l.onWhitelist != nil {
-		err := messaging.Subscribe("whitelist.update", func(data []byte) {
+		topic := "whitelist.update." + agentID
+		err := messaging.Subscribe(topic, func(data []byte) {
 			var update models.WhitelistUpdate
 			if err := json.Unmarshal(data, &update); err != nil {
-				log.Printf("Failed to unmarshal whitelist.update: %v\n", err)
+				log.Printf("Failed to unmarshal %s: %v\n", topic, err)
 				return
 			}
 			l.onWhitelist(update)
 		})
 		if err != nil {
-			return fmt.Errorf("whitelist.update subscribe: %w", err)
+			return fmt.Errorf("%s subscribe: %w", topic, err)
 		}
 	}
 

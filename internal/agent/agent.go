@@ -78,7 +78,7 @@ func Start(ctx context.Context, conf *config.Settings) error {
 		return fmt.Errorf("failed to start policy listener: %w", err)
 	}
 
-	fetchWhitelist(program)
+	fetchWhitelist(program, cfg.AgentID)
 
 	rep := reporter.New(cfg.AgentID, &serverAvailable)
 	rep.Start()
@@ -300,8 +300,9 @@ func boolToInt(b bool) int {
 // fetchWhitelist requests the current trusted-IP list from the policy server
 // via NATS (whitelist.fetch) and seeds the eBPF bypass_list map so whitelisted
 // IPs are enforced immediately without waiting for a whitelist.update message.
-func fetchWhitelist(program *ebpfloader.PolicyProgram) {
-	data, err := messaging.Request("whitelist.fetch", []byte("{}"), 5*time.Second)
+func fetchWhitelist(program *ebpfloader.PolicyProgram, agentID string) {
+	body, _ := json.Marshal(map[string]string{"agent_id": agentID})
+	data, err := messaging.Request("whitelist.fetch", body, 5*time.Second)
 	if err != nil {
 		log.Printf("Whitelist fetch failed (will apply updates as they arrive): %v", err)
 		return

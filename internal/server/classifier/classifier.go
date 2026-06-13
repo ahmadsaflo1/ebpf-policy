@@ -102,10 +102,24 @@ func Start() {
 }
 
 // handleFetchRequest responds to an agent's whitelist.fetch request with the
-// list of all currently whitelisted (TRUSTED) IP addresses.
+// trusted IPs that the requesting agent has actually seen in the last 24 h.
+// The request body must contain {"agent_id": "<id>"}.
 func handleFetchRequest(req []byte) []byte {
-	rows, err := db.DB.Query(
-		`SELECT ip::text FROM ip_classifications WHERE whitelisted = TRUE`)
+	var body struct {
+		AgentID string `json:"agent_id"`
+	}
+	json.Unmarshal(req, &body)
+
+	// Return only IPs that are whitelisted AND have been seen by this agent.
+	// Agents that have never seen an IP should not get it in their bypass list.
+	rows, err := db.DB.Query(`
+		SELECT DISTINCT ic.ip::text
+		FROM ip_classifications ic
+		JOIN client_stats cs ON cs.ip = ic.ip
+		WHERE ic.whitelisted = TRUE
+		  AND cs.agent_id   = $1
+		  AND cs.time       > NOW() - INTERVAL '24 hours'`,
+		body.AgentID)
 	if err != nil {
 		log.Printf("Classifier: whitelist.fetch query error: %v", err)
 		data, _ := json.Marshal(models.WhitelistFetchResponse{IPs: []string{}})
@@ -370,17 +384,49 @@ func logEntry(ip, class string, z float64, bl *ipBaseline, action string, rateLi
 	}
 }
 
-// publishWhitelistUpdate broadcasts a whitelist add/remove event to all agents.
+// publishWhitelistUpdate sends a whitelist add/remove event only to agents
+// that have actually observed this IP in the last 24 h. Publishing per-agent
+// (whitelist.update.<agentID>) avoids whitelisting IPs on agents that have no
+// traffic history for them.
 func publishWhitelistUpdate(ip, action, reason string) {
+	agents, err := agentsForIP(ip)
+	if err != nil {
+		log.Printf("Classifier: could not look up agents for %s: %v", ip, err)
+		return
+	}
 	payload := models.WhitelistUpdate{IP: ip, Action: action, Reason: reason}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Classifier: marshal whitelist update for %s: %v", ip, err)
 		return
 	}
-	if err := messaging.Publish("whitelist.update", data); err != nil {
-		log.Printf("Classifier: publish whitelist.update for %s: %v", ip, err)
+	for _, agentID := range agents {
+		topic := "whitelist.update." + agentID
+		if err := messaging.Publish(topic, data); err != nil {
+			log.Printf("Classifier: publish %s for %s: %v", topic, ip, err)
+		}
 	}
+}
+
+// agentsForIP returns the IDs of all agents that have seen ip in the last 24 h.
+func agentsForIP(ip string) ([]string, error) {
+	rows, err := db.DB.Query(`
+		SELECT DISTINCT agent_id
+		FROM client_stats
+		WHERE ip   = $1
+		  AND time > NOW() - INTERVAL '24 hours'`, ip)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var agents []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			agents = append(agents, id)
+		}
+	}
+	return agents, rows.Err()
 }
 
 // publishEnforcementRule sends an agent-targeted rate-limit policy for ip.
