@@ -224,7 +224,9 @@ func ProcessAdaptive(report models.SystemMetricsReport) {
 
 	// Oscillation protection: suppress publish when index changed < 10 units
 	// since the last publish. This prevents rapid toggling near level boundaries.
-	if math.Abs(idx-state.LastPublishedIndex) < 10 {
+	// Level-0 (rule removal) is exempt — it must always be logged so operators
+	// can see when the adaptive rule was cleared.
+	if candidateLevel > 0 && math.Abs(idx-state.LastPublishedIndex) < 10 {
 		return
 	}
 
@@ -235,9 +237,13 @@ func ProcessAdaptive(report models.SystemMetricsReport) {
 		rateLimit = levelRateLimit[candidateLevel]
 		publishAdaptiveScaleRule(agentID, rateLimit, candidateLevel)
 	} else {
-		if !restoreManualRules(agentID) {
-			// No agent-specific manual rules exist; leave the adaptive rule active.
-			return
+		// Always delete the adaptive sentinel rule when returning to level 0,
+		// regardless of whether manual rules exist to replace it.
+		if delData, err := json.Marshal(map[string]int{"id": autoScaleRuleID}); err == nil {
+			_ = messaging.Publish("policy.delete."+agentID, delData)
+		}
+		if hasManual := restoreManualRules(agentID); !hasManual {
+			reason += " — no manual rules configured; adaptive rule cleared"
 		}
 	}
 
@@ -287,10 +293,9 @@ func publishAdaptiveScaleRule(agentID string, threshold, level int) {
 }
 
 // restoreManualRules fetches rules whose topic matches agentID from policy_rules
-// and publishes each one to policy.update.<agentID>. The adaptive rule (ID=-1)
-// is deleted first so it does not shadow the restored rules.
-// Returns true only if at least one manual rule was published.
-// Per spec: if no manual rules exist for this agent, nothing is published.
+// and publishes each one to policy.update.<agentID>.
+// Returns true if at least one manual rule was published.
+// The caller is responsible for deleting the adaptive sentinel before calling this.
 func restoreManualRules(agentID string) bool {
 	rows, err := db.DB.Query(`
 		SELECT id, name, threshold, action, duration, topic, created_at
@@ -316,11 +321,6 @@ func restoreManualRules(agentID string) bool {
 
 	if len(rules) == 0 {
 		return false
-	}
-
-	// Remove the adaptive sentinel rule from the agent before restoring manual rules.
-	if delData, err := json.Marshal(map[string]int{"id": autoScaleRuleID}); err == nil {
-		_ = messaging.Publish("policy.delete."+agentID, delData)
 	}
 
 	for _, r := range rules {

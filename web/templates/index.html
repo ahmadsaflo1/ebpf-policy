@@ -585,7 +585,10 @@
           </thead>
           <tbody class="divide-y divide-gray-800/70">
             <template x-for="(row, i) in scaling.results" :key="i">
-              <tr class="hover:bg-gray-800/30 transition-colors">
+              <tr class="transition-colors"
+                  :class="row.rate_limit === 0
+                    ? 'bg-green-950/25 border-l-2 border-green-700/50 hover:bg-green-950/40'
+                    : 'hover:bg-gray-800/30'">
 
                 <td class="px-5 py-3 text-gray-500 text-xs whitespace-nowrap" x-text="fmtDate(row.time)"></td>
 
@@ -624,7 +627,22 @@
                   </span>
                 </td>
 
-                <td class="px-4 py-3 text-gray-400 text-xs max-w-xs truncate" :title="row.reason" x-text="row.reason"></td>
+                <td class="px-4 py-3 text-xs max-w-sm"
+                    :class="row.rate_limit === 0 ? 'text-green-300/80' : 'text-gray-400'">
+                  <template x-if="!scaling.expanded[i]">
+                    <span>
+                      <span x-text="row.reason.length > 90 ? row.reason.slice(0, 90) + '…' : row.reason"></span>
+                      <span x-show="row.reason.length > 90"
+                            class="ml-1 text-blue-500 hover:text-blue-400 font-medium cursor-pointer whitespace-nowrap"
+                            @click.stop="scaling.expanded = {...scaling.expanded, [i]: true}">visa mer</span>
+                    </span>
+                  </template>
+                  <template x-if="scaling.expanded[i]">
+                    <span class="break-words leading-relaxed cursor-pointer"
+                          @click.stop="scaling.expanded = {...scaling.expanded, [i]: false}"
+                          x-text="row.reason + '  ↑ dölj'"></span>
+                  </template>
+                </td>
               </tr>
             </template>
           </tbody>
@@ -1045,7 +1063,7 @@
       sysAgg: { loading: false, result: null, error: '', params: { agent: '', timerange: '1h' } },
 
       // adaptive scaling decisions
-      scaling: { loading: false, results: [], count: null, error: '', params: { agent: '', timerange: '24h', limit: 100 } },
+      scaling: { loading: false, results: [], count: null, error: '', expanded: {}, params: { agent: '', timerange: '24h', limit: 100 } },
 
       // ip classification
       cls:    { loading: false, results: [], count: null, error: '', filter: '', limit: 200 },
