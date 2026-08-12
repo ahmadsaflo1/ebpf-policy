@@ -2,7 +2,7 @@
 
 > Distributed DDoS mitigation and traffic rate-limiting system with kernel-level packet filtering and centralized real-time policy management.
 
-**eBPF/XDP** filters packets directly at the network driver level — long before they reach the application layer — while policy decisions are distributed in real time via **NATS** to all running agents. System and traffic metrics are persisted to **TimescaleDB** and queryable via REST or the built-in web UI.
+**eBPF/XDP** filters packets directly at the network driver level — long before they reach the application layer — while policy decisions are distributed in real time via **NATS** to all running agents. System and traffic metrics are persisted to **TimescaleDB** and queryable via REST or the built-in web UI. An autonomous **Z-score classifier** continuously builds per-IP behavioural baselines, whitelisting trusted IPs and rate-limiting or blocking anomalous ones without any manual administration. An **adaptive load scaler** monitors system resource usage and automatically tightens rate limits when an agent is under stress.
 
 ---
 
@@ -12,6 +12,8 @@
 - [Data Flow](#data-flow)
 - [eBPF Maps](#ebpf-maps)
 - [Rule Matching](#rule-matching)
+- [Autonomous IP Classifier](#autonomous-ip-classifier)
+- [Adaptive Load Scaling](#adaptive-load-scaling)
 - [Environment Tags](#environment-tags)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -36,6 +38,8 @@
 │   TimescaleDB                │
 │   Policy publishing          │
 │   Metrics + log collection   │
+│   IP Classifier (Z-score)    │
+│   Adaptive Load Scaler       │
 └──────────────┬───────────────┘
                │
            NATS pub/sub + JetStream
@@ -54,7 +58,7 @@
 
 | Binary | Config file | Description |
 |--------|-------------|-------------|
-| **`policy-server`** | `policyserver.conf` | Central control plane — manages rules via REST API, persists data to TimescaleDB, distributes changes via NATS, collects metrics and logs |
+| **`policy-server`** | `policyserver.conf` | Central control plane — manages rules via REST API, persists data to TimescaleDB, distributes changes via NATS, collects metrics and logs, runs the IP classifier and adaptive load scaler |
 | **`webserver`** | `webserver.conf` | Serves the web UI and runs the embedded eBPF/XDP agent |
 
 ### Components
@@ -65,16 +69,20 @@
 | **Agent** | Embedded in the webserver binary — loads the eBPF program, enforces rules, reports metrics |
 | **eBPF/XDP** | Kernel-space C program that filters packets at the network interface with microsecond latency |
 | **NATS + JetStream** | Message broker for policy distribution, metrics aggregation, and guaranteed log delivery |
+| **IP Classifier** | Runs on the policy server every 60 s — builds 24-hour rolling baselines per IP and classifies them as `trusted`, `normal`, `suspicious`, or `unknown` using Z-score anomaly detection |
+| **Adaptive Load Scaler** | Runs on the policy server — monitors each agent's system metrics (CPU, memory, disk, network) and automatically publishes rate-limit rules when load spikes above baseline |
 
 ### NATS Topics
 
 | Topic | Direction | Delivery | Purpose |
 |-------|-----------|----------|---------|
 | `policy.update` | Server → Agents | Core NATS | New or updated global rule |
-| `policy.update.<tag>` | Server → Agents | Core NATS | New or updated rule for a specific environment |
+| `policy.update.<tag>` | Server → Agents | Core NATS | New or updated rule for a specific environment or agent |
 | `policy.delete` | Server → Agents | Core NATS | Deleted global rule |
-| `policy.delete.<tag>` | Server → Agents | Core NATS | Deleted rule for a specific environment |
+| `policy.delete.<tag>` | Server → Agents | Core NATS | Deleted rule for a specific environment or agent |
 | `policy.fetch` | Agents → Server | Core NATS (req/reply) | Agent requests full rule set on startup |
+| `whitelist.fetch` | Agents → Server | Core NATS (req/reply) | Agent requests its trusted-IP list on startup to seed the bypass list |
+| `whitelist.update.<agentID>` | Server → Agents | Core NATS | Classifier adds or removes an IP from a specific agent's bypass list |
 | `metrics.report` | Agents → Server | Core NATS | Per-IP traffic stats (every 10 s) |
 | `system.metrics` | Agents → Server | Core NATS | System performance metrics (every 30 s) |
 | `log.>` | Agents → Server | **JetStream** | Structured JSON log lines — guaranteed delivery |
@@ -88,6 +96,8 @@
 ```
 Incoming network packet
   → Parse Ethernet → IPv4 header
+  → Check bypass_list (trusted IPs)
+      → IP in bypass_list:           XDP_PASS (skip all enforcement)
   → Check block_list
       → Match and not expired:  XDP_DROP
       → Expired block:          removed automatically, XDP_PASS
@@ -129,6 +139,18 @@ PUT /api/rules/:id
   → Collect network I/O delta from /proc/net/dev
   → Publish SystemMetricsReport to NATS "system.metrics"
   → Server persists to system_metrics
+  → Adaptive scaler evaluates load index and adjusts rules if needed
+```
+
+**IP classification loop (policy server, every 60 s):**
+
+```
+  → Query all IPs active in the last 24 h
+  → For each IP: compute 24-hour mean/stddev and Z-score
+  → TRUSTED  → add to eBPF bypass_list via whitelist.update.<agentID>
+  → SUSPICIOUS → rate-limit or block via policy.update.<ip>
+  → NORMAL / UNKNOWN → no action
+  → Persist decision to ip_classifications + ip_classification_log
 ```
 
 **Log delivery (per agent, per log line):**
@@ -145,16 +167,19 @@ PUT /api/rules/:id
 
 ## eBPF Maps
 
-The XDP program maintains four LRU hash maps (max 10 000 entries each), keyed by the source IPv4 address as a `uint32`:
+The XDP program maintains LRU hash maps (max 10 000 entries each unless noted), keyed by source IPv4 address (`uint32`) or destination port (`uint16`):
 
 | Map | Key | Value | Purpose |
 |-----|-----|-------|---------|
 | `request_count` | `u32` src IP | `{count, last_seen}` | Cumulative packet counter read by the agent every 10 s to calculate req/s |
 | `block_list` | `u32` src IP | `u64` ktime expiry (ns) | Hard block — packets are dropped until the expiry timestamp passes |
+| `rate_limit_config_map` | `u32` src IP | `u64` tokens/sec | Per-IP configured rate limit — written by the agent, read by XDP to refill the token bucket |
 | `rate_limit_map` | `u32` src IP | `{tokens, last_refill}` | Token-bucket state; the XDP program itself drops packets when tokens reach 0 |
 | `latency_map` | `u32` src IP | `{total_ns, count, min_ns, max_ns}` | Per-packet XDP processing latency accumulated for the agent's latency reports |
+| `bypass_list` | `u32` src IP | `u64` seed timestamp | Trusted IPs — XDP skips block_list and rate_limit enforcement; traffic is still counted for the classifier |
+| `protected_ports` | `u16` dst port | `u8` flag | Ports subject to DDoS enforcement; traffic to all other ports passes through untracked. Defaults: 80, 443, 8080 |
 
-The XDP program runs in **generic mode** (`XDP_FLAGS_SKB_MODE`) for broad driver compatibility. Native or offload mode can improve performance on supported NICs but requires driver support.
+The XDP program prefers **native mode** (driver-level) for line-rate performance. It falls back to **generic mode** automatically when the NIC driver does not support native XDP — a warning is logged in that case.
 
 ---
 
@@ -168,12 +193,13 @@ Every inbound packet passes through these steps in order:
 
 ```
 Incoming packet
-  → Non-IPv4?                          XDP_PASS (not tracked)
-  → Non-TCP/UDP?                       XDP_PASS (ICMP, IGMP, etc. pass through)
-  → Destination port not in protected_ports?  XDP_PASS (unmonitored ports pass through)
-  → src IP in block_list and not expired?     XDP_DROP
+  → Non-IPv4?                                  XDP_PASS (not tracked)
+  → Non-TCP/UDP?                               XDP_PASS (ICMP, IGMP, etc. pass through)
+  → Destination port not in protected_ports?   XDP_PASS (unmonitored ports pass through)
+  → src IP in bypass_list?                     XDP_PASS (trusted — skip all enforcement)
+  → src IP in block_list and not expired?      XDP_DROP
   → Increment request_count[src_ip]
-  → Token bucket exhausted?            XDP_DROP
+  → Token bucket exhausted?                    XDP_DROP
   → Record XDP latency
   → XDP_PASS
 ```
@@ -225,6 +251,89 @@ Every 10 seconds the agent reads the eBPF `request_count` map, computes `req/s =
 | NATS connection drops | Reconnects with 5 s interval |
 
 Rule cache is saved to `/tmp/ebpf-policy-rules.json` and updated on every successful fetch.
+
+---
+
+## Autonomous IP Classifier
+
+The classifier is a background engine on the policy server that builds a **24-hour rolling statistical baseline** for every active IP and continuously reclassifies them using Z-score anomaly detection. It runs every 60 seconds and requires no manual configuration.
+
+### Classification Labels
+
+| Label | Meaning | Action |
+|-------|---------|--------|
+| `unknown` | Fewer than 18 data points (< 3 min of traffic) | No action |
+| `normal` | Z-score within normal range | No action |
+| `trusted` | 360+ samples, Z ≤ 1.5, CV ≤ 0.5 (≥ 1 h of stable behaviour) | Added to eBPF `bypass_list` — skips all enforcement |
+| `suspicious` | Z ≥ 3.0 | Rate-limited or blocked proportional to Z-score |
+
+### Suspicious Enforcement (proportional to Z-score)
+
+| Z-score range | Action |
+|---------------|--------|
+| 3.0 ≤ z < 4.0 | Rate-limited to 1.5× mean req/s (lenient cap) |
+| 4.0 ≤ z < 5.0 | Rate-limited to 0.8× mean req/s (tight cap) |
+| z ≥ 5.0 | Blocked for 60 seconds |
+
+### Z-Score Calculation
+
+The classifier uses a **minimum stddev floor of 10 % of mean** to prevent hypersensitivity on very stable IPs. An IP sending a steady 100 req/s needs at least a 10 req/s deviation before the Z-score rises above 1.0.
+
+### Whitelist Propagation
+
+Whitelist changes are published per-agent over `whitelist.update.<agentID>` to only agents that have seen that IP in the last 24 hours. On startup, agents request their initial trusted-IP list via `whitelist.fetch`.
+
+### Classifier Thresholds
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `MinBaseSamples` | 18 | Minimum samples before any verdict other than `unknown` (≈ 3 min) |
+| `MinTrustedSamples` | 360 | Minimum samples before `trusted` promotion (≈ 1 h) |
+| `MaxCV` | 0.5 | Maximum coefficient of variation (stddev/mean) for `trusted` |
+| `ZTrust` | 1.5 | Z-score ceiling for `trusted` |
+| `ZSuspicious` | 3.0 | Z-score floor that triggers `suspicious` |
+| `ZBlock` | 5.0 | Z-score at which a `suspicious` IP is blocked instead of rate-limited |
+
+Classification state is persisted in `ip_classifications` (latest per IP) and `ip_classification_log` (full audit trail, 30-day retention).
+
+---
+
+## Adaptive Load Scaling
+
+The adaptive load scaler monitors each agent's system performance and automatically publishes rate-limit rules when resource usage exceeds the historical baseline. It processes every `system.metrics` report arriving via NATS.
+
+### Load Index
+
+Four resource dimensions are combined into a single 0–100 load index:
+
+```
+load_index = clamp(pos(z_cpu)×25 + pos(z_mem)×25 + pos(z_disk)×25 + pos(z_net)×25, 0, 100)
+```
+
+Only positive Z-scores contribute (below-baseline usage counts as zero). The same **10 % CV floor** used by the IP classifier prevents noise from hyper-stable resources.
+
+### Rule Levels
+
+| Level | Load index | Rate limit |
+|-------|-----------|------------|
+| 0 | ≤ 30 | None — manual rules restored |
+| 1 | 31–50 | 400 req/s |
+| 2 | 51–70 | 200 req/s |
+| 3 | 71–90 | 100 req/s |
+| 4 | > 90 | 50 req/s |
+
+### Stability Guards
+
+| Guard | Behaviour |
+|-------|-----------|
+| **Escalation confirmation** | 3 consecutive reports above the next level's threshold are required before escalating — prevents reacting to a single spike |
+| **Gradual recovery** | 2 consecutive stable reports below the current level are required before stepping down — prevents oscillation |
+| **Oscillation suppression** | A new rule is not published if the load index changed by less than 10 units since the last publish |
+| **Baseline shift detection** | If the agent remains at level 0 but the load index is persistently positive for > 10 consecutive reports, the 24-hour baseline is re-anchored to the last 2 hours (handles permanent workload changes such as opening a large IDE) |
+
+Adaptive rules use the sentinel ID `-1` and the agent's ID as `topic`, so they target only that agent and are cleanly replaced on each level change. When the load returns to level 0, manual rules (if any) are restored automatically.
+
+All decisions are logged to `scaling_decisions` and queryable via `GET /api/scaling/decisions`.
 
 ---
 
@@ -325,7 +434,7 @@ cd ebpf-policy
 
 ### 5. Install Go build tool (bpf2go)
 
-`bpf2go` genererar Go-bindningar från den kompilerade eBPF-koden. Installera det med:
+`bpf2go` generates Go bindings from the compiled eBPF bytecode. Install it with:
 
 ```bash
 go get -tool github.com/cilium/ebpf/cmd/bpf2go
@@ -656,6 +765,8 @@ Available at `http://<webserver-ip>:4040/`
 | **Rules** | Create, view, edit, and delete policy rules |
 | **Traffic** | Top clients by req/s / blocks / rate-limits; per-IP search; aggregated stats |
 | **System** | Recent and aggregated system metrics (CPU, memory, disk, network I/O) per agent |
+| **Scaling** | Adaptive load scaling decisions — load index, Z-scores per resource, level changes |
+| **Classification** | Autonomous IP classification state — trusted / normal / suspicious / unknown per IP, Z-scores, whitelist status |
 
 ---
 
@@ -668,7 +779,7 @@ Base URL: `http://<server>:8080`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Server health check |
-| `GET` | `/api/rules` | List all rules |
+| `GET` | `/api/rules` | List all rules (optional `?topic=` filter) |
 | `POST` | `/api/rules` | Create a new rule |
 | `GET` | `/api/rules/{id}` | Get a specific rule |
 | `PUT` | `/api/rules/{id}` | Update a rule |
@@ -688,6 +799,20 @@ Base URL: `http://<server>:8080`
 |--------|----------|-------------|
 | `GET` | `/api/system/metrics` | Recent system metrics (`?agent=`, `?timerange=1h`, `?limit=100`) |
 | `GET` | `/api/system/metrics/aggregated` | Aggregated system metrics per agent (`?agent=<required>`, `?timerange=1h`) |
+
+### Adaptive Scaling
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/scaling/decisions` | Scaling decisions log (`?agent=`, `?timerange=24h`, `?limit=100`) — returns load index, Z-scores, rate limit applied, and reason |
+
+### IP Classification
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/classification` | All IP classifications (`?classification=trusted\|suspicious\|normal\|unknown`, `?limit=200`) |
+| `GET` | `/api/classification/ip` | Classification for a single IP (`?ip=<required>`) |
+| `GET` | `/api/classification/log` | Classification audit log (`?ip=`, `?limit=100`, `?offset=0`) |
 
 ### Example: Create a global block rule
 
@@ -742,7 +867,7 @@ http://<server-ip>:3000
 
 Log in with username `admin` and password `admin`, then navigate to **Dashboards → Browse** and select **eBPF Policy Overview**.
 
-> Replace `<server-ip>` with the IP address of the machine running the server. 
+> Replace `<server-ip>` with the IP address of the machine running the server.
 
 The dashboard is loaded automatically via provisioning from `grafana/dashboards/ebpf-policy-overview.json`. No manual steps are required.
 
@@ -817,6 +942,59 @@ net_bytes_sent   BIGINT      NOT NULL
 net_bytes_recv   BIGINT      NOT NULL
 ```
 
+**`scaling_decisions`** — adaptive load scaling audit log (hypertable)
+
+```sql
+time        TIMESTAMPTZ NOT NULL
+agent_id    TEXT        NOT NULL
+load_index  FLOAT       NOT NULL    -- combined 0–100 load index
+z_cpu       FLOAT       NOT NULL
+z_memory    FLOAT       NOT NULL
+z_disk      FLOAT       NOT NULL
+z_network   FLOAT       NOT NULL
+rate_limit  INT         NOT NULL    -- req/s applied (0 = rule removed)
+reason      TEXT        NOT NULL
+```
+
+**`ip_classifications`** — latest autonomous classification state per IP
+
+```sql
+ip              INET        PRIMARY KEY
+classification  TEXT        NOT NULL DEFAULT 'unknown'   -- trusted | normal | suspicious | unknown
+z_score         FLOAT       NOT NULL DEFAULT 0
+sample_count    INT         NOT NULL DEFAULT 0
+mean_rate       FLOAT       NOT NULL DEFAULT 0           -- req/s 24-hour mean
+stddev_rate     FLOAT       NOT NULL DEFAULT 0
+current_rate    FLOAT       NOT NULL DEFAULT 0           -- avg of last 3 samples
+mean_latency    FLOAT       NOT NULL DEFAULT 0
+stddev_latency  FLOAT       NOT NULL DEFAULT 0
+whitelisted     BOOL        NOT NULL DEFAULT FALSE
+last_updated    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+reason          TEXT        NOT NULL DEFAULT ''
+```
+
+**`ip_classification_log`** — append-only classification audit trail (30-day retention)
+
+```sql
+time            TIMESTAMPTZ NOT NULL
+ip              INET        NOT NULL
+classification  TEXT        NOT NULL
+z_score         FLOAT       NOT NULL DEFAULT 0
+sample_count    INT         NOT NULL DEFAULT 0
+mean_rate       FLOAT       NOT NULL DEFAULT 0
+current_rate    FLOAT       NOT NULL DEFAULT 0
+action          TEXT        NOT NULL DEFAULT 'no_change'   -- whitelist_add | whitelist_remove | rate_limit | block | no_change
+rate_limit      INT         NOT NULL DEFAULT 0
+reason          TEXT        NOT NULL DEFAULT ''
+```
+
+**Continuous aggregates** — pre-computed 1-minute rollups refreshed every 30 seconds:
+
+| View | Source | Columns |
+|------|--------|---------|
+| `client_stats_1m` | `client_stats` | avg req/s, sum blocked, sum rate_limited, sum passed, avg/min/max latency |
+| `system_metrics_1m` | `system_metrics` | avg CPU, avg memory, avg disk, avg net sent/recv |
+
 ---
 
 ## Technologies
@@ -827,8 +1005,8 @@ net_bytes_recv   BIGINT      NOT NULL
 | [NATS + JetStream](https://nats.io) | Distributed pub/sub messaging with guaranteed log delivery |
 | [BurntSushi/toml](https://github.com/BurntSushi/toml) | TOML configuration file parsing |
 | Go stdlib `net/http` | HTTP server and REST API routing |
-| [TimescaleDB](https://www.timescale.com) | Time-series PostgreSQL for metrics |
+| [TimescaleDB](https://www.timescale.com) | Time-series PostgreSQL for metrics, continuous aggregates, and retention policies |
 | `/proc` + `syscall.Statfs` | Linux-native system metrics (CPU, memory, disk, network I/O) |
 | [Alpine.js](https://alpinejs.dev) + [Tailwind CSS](https://tailwindcss.com) | Reactive web UI |
-| eBPF/XDP | Kernel-level packet filtering with minimal overhead |
+| eBPF/XDP | Kernel-level packet filtering with minimal overhead; native mode preferred, generic fallback |
 | `golang.org/x/crypto/acme/autocert` | Automatic TLS certificates via Let's Encrypt |
